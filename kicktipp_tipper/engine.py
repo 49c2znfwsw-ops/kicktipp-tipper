@@ -429,7 +429,12 @@ class Engine:
                            "treffer": sum(c["treffer"] for c in j), "bewertet": len(j),
                            "getippt": sum(1 for c in row if c["tipp"]),
                            "teilnahme_prognose": backtest.profiles[mid].teilnahme if backtest and mid in backtest.profiles else None})
-        tipper.sort(key=lambda r: (-(r["treffer"] / r["bewertet"]) if r["bewertet"] else 1, r["name"]))
+        # nach aktueller Gesamtplatzierung (letzter geladener Stand), bei Gleichstand nach Punkten des Spieltags
+        current = self.profiles()
+        for r in tipper:
+            prof = current.profiles.get(r["member_id"]) if current else None
+            r["platz"] = prof.platz if prof else None
+        tipper.sort(key=lambda r: (r["platz"] if r["platz"] is not None else 999, r["name"].lower()))
         return {
             "spieltag": spieltag, "spieltage": with_tips,
             "quelle": "gemischt" if len(quellen) > 1 else (quellen.pop() if quellen else None),

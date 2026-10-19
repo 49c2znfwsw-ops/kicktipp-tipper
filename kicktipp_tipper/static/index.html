@@ -409,10 +409,10 @@ function miniBar(a) {
   return `<span class="mini">${a.map((x, i) => `<span style="width:${x * 100}%;background:${TCOL[i]}"></span>`).join("")}</span>`;
 }
 // Eigene Zeile über den Prognosen: aktueller Tipp, Empfehlung und wie viele voraussichtlich gleich tippen
-function myRow(games, others) {
+function myRow(games, others, me) {
   const byKey = Object.fromEntries((state?.matches || []).map((m) => [m.key, m]));
   const tend = (t) => t[0] > t[1] ? 0 : t[0] === t[1] ? 1 : 2;
-  return `<tr class="me"><td>Du</td><td></td>${games.map((g) => {
+  return `<tr class="me"><td>${me?.platz ?? "–"}</td><td>Du</td><td></td>${games.map((g) => {
     const m = byKey[g.key];
     if (!m) return "<td>–</td>";
     const cur = m.current_tip, rec = m.tip;
@@ -447,15 +447,16 @@ async function loadMitspieler() {
   loadAbgleich();
   // Prognose-Matrix
   const games = d.prognosen;
-  const others = d.profile.filter((p) => !p.ich && p.teilnahme >= 0.2);
-  $("progTable").innerHTML = games.length ? `<thead><tr><th>Mitspieler</th><th>tippt zu</th>${games.map((g) => `<th title="${esc(g.home)} – ${esc(g.away)}">${esc(g.home.slice(0, 10))}<br><span class="sub">${esc(g.away.slice(0, 10))}</span></th>`).join("")}</tr></thead>
-    <tbody>${myRow(games, others)}${others.map((p) => `<tr><td>${esc(p.name)}</td><td>${pct(p.teilnahme)}</td>${games.map((g) => {
+  const byRank = (a, b) => (a.platz ?? 999) - (b.platz ?? 999) || a.name.localeCompare(b.name, "de", { numeric: true });
+  const others = d.profile.filter((p) => !p.ich && p.teilnahme >= 0.2).sort(byRank);
+  $("progTable").innerHTML = games.length ? `<thead><tr><th>Platz</th><th>Mitspieler</th><th>tippt zu</th>${games.map((g) => `<th title="${esc(g.home)} – ${esc(g.away)}">${esc(g.home.slice(0, 10))}<br><span class="sub">${esc(g.away.slice(0, 10))}</span></th>`).join("")}</tr></thead>
+    <tbody>${myRow(games, others, d.profile.find((p) => p.ich))}${others.map((p) => `<tr><td>${p.platz ?? "–"}</td><td>${esc(p.name)}</td><td>${pct(p.teilnahme)}</td>${games.map((g) => {
       const pr = g.tipper[p.member_id]; if (!pr) return "<td>–</td>";
       const k = pr.indexOf(Math.max(...pr));
       const done = (g.abgegeben || []).includes(p.member_id);
       return `<td>${done ? '<span class="sub" title="hat schon getippt (Tipp noch verdeckt)">✓ </span>' : ""}<span class="cellp" style="background:color-mix(in srgb, ${TCOL[k]} ${Math.round(pr[k] * 45)}%, transparent)" title="Heim ${pct(pr[0])} · Remis ${pct(pr[1])} · Ausw. ${pct(pr[2])}">${TEND[k]} ${pct(pr[k])}</span></td>`;
     }).join("")}</tr>`).join("")}
-    <tr><td><b>Runde erwartet</b></td><td></td>${games.map((g) => {
+    <tr><td></td><td><b>Runde erwartet</b></td><td></td>${games.map((g) => {
       let s = [0, 0, 0], w = 0;
       others.forEach((p) => { const pr = g.tipper[p.member_id]; if (pr) { pr.forEach((x, i) => s[i] += x * p.teilnahme); w += p.teilnahme; } });
       return `<td>${miniBar(s.map((x) => x / (w || 1)))}</td>`;
@@ -485,15 +486,15 @@ async function loadAbgleich(spieltag) {
     <div class="tile"><div class="v">${pct(z.mehrheit_treffer)}</div><div class="l">zum Vergleich: „tippt wie die Mehrheit“</div></div>
     <div class="tile"><div class="v">${pct(z.p_tatsaechlich)}</div><div class="l">Ø Wahrscheinlichkeit, die die Prognose dem echten Tipp gab</div></div>` : "";
   const g = a.spiele;
-  const qrow = g.some((m) => m.quote_prognose) ? `<tr><td class="sub">Rundenquote Prognose</td><td></td>${g.map((m) => `<td class="sub">${m.quote_prognose ? m.quote_prognose.join("-") : "–"}</td>`).join("")}</tr>` : "";
-  $("abgTable").innerHTML = `<thead><tr><th>Mitspieler</th><th>Treffer</th>${g.map((m) => `<th>${esc(m.home.slice(0, 10))}<br><span class="sub">${esc(m.away.slice(0, 10))}</span><br><span class="sub">${m.ergebnis ? m.ergebnis.join(":") : ""}</span></th>`).join("")}</tr></thead><tbody>
-    ${a.tipper.map((r) => `<tr><td>${esc(r.name)}</td><td>${r.bewertet ? `${r.treffer}/${r.bewertet}` : (r.getippt ? "–" : "nicht getippt")}</td>${r.zellen.map((c) => {
+  const qrow = g.some((m) => m.quote_prognose) ? `<tr><td></td><td class="sub">Rundenquote Prognose</td><td></td>${g.map((m) => `<td class="sub">${m.quote_prognose ? m.quote_prognose.join("-") : "–"}</td>`).join("")}</tr>` : "";
+  $("abgTable").innerHTML = `<thead><tr><th>Platz</th><th>Mitspieler</th><th>Treffer</th>${g.map((m) => `<th>${esc(m.home.slice(0, 10))}<br><span class="sub">${esc(m.away.slice(0, 10))}</span><br><span class="sub">${m.ergebnis ? m.ergebnis.join(":") : ""}</span></th>`).join("")}</tr></thead><tbody>
+    ${a.tipper.map((r) => `<tr><td>${r.platz ?? "–"}</td><td>${esc(r.name)}</td><td>${r.bewertet ? `${r.treffer}/${r.bewertet}` : (r.getippt ? "–" : "nicht getippt")}</td>${r.zellen.map((c) => {
       if (!c.tipp) return `<td class="sub">–</td>`;
       if (!c.p) return `<td>${c.tipp.join(":")}</td>`;
       const k = c.p.indexOf(Math.max(...c.p));
       return `<td><span class="cellp ${c.treffer ? "cell-hit" : "cell-miss"}" title="Prognose: Heim ${pct(c.p[0])} · Remis ${pct(c.p[1])} · Ausw. ${pct(c.p[2])}">${c.tipp.join(":")} ${c.treffer ? "✓" : "✗"}</span><br><span class="sub">${TEND[k]} ${pct(c.p[k])}</span></td>`;
     }).join("")}</tr>`).join("")}
-    <tr><td class="sub">Rundenquote Ist</td><td></td>${g.map((m) => `<td class="sub">${m.quote_ist ? m.quote_ist.join("-") : "–"}</td>`).join("")}</tr>${qrow}</tbody>`;
+    <tr><td></td><td class="sub">Rundenquote Ist</td><td></td>${g.map((m) => `<td class="sub">${m.quote_ist ? m.quote_ist.join("-") : "–"}</td>`).join("")}</tr>${qrow}</tbody>`;
 }
 
 // ---- So funktioniert's ----------------------------------------------------------------

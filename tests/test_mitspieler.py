@@ -244,3 +244,14 @@ def test_explanation_matches_engine_with_submitted(tmp_path, monkeypatch):
     x = explain(engine, m["key"])
     assert x["exakt"]["abgegeben"] == 4 and x["exakt"]["zaehlung"] == [3.0, 1.0, 0.0]
     assert [round(v, 2) for v in x["quote_erwartet"]] == m["expected_quote"]
+
+
+def test_tables_sorted_by_rank(tmp_path, monkeypatch):
+    monkeypatch.setattr(t, "FakeKicktipp", HistFake)
+    engine, _ = t.make_engine(tmp_path, rules=ScoringRules(quote=QuoteRule(3, 10)), anzahl_tipper=25)
+    engine.refresh()
+    engine.load_history(pause_s=0)
+    plaetze = [p["platz"] for p in engine.mitspieler()["profile"]]
+    assert plaetze == sorted(plaetze)
+    abg = [r["platz"] for r in engine.abgleich()["tipper"]]
+    assert abg == sorted(abg) and abg[0] == 2  # Platz 1 bin ich

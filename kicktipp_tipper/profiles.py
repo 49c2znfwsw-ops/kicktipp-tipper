@@ -237,7 +237,7 @@ class Profiles:
         return (float(shares[0]), float(shares[1]), float(shares[2])), 1.0 + weight
 
     def as_dict(self) -> list[dict]:
-        return [asdict(p) for p in sorted(self.profiles.values(), key=lambda p: (p.platz or 999, p.name))]
+        return [asdict(p) for p in sorted(self.profiles.values(), key=lambda p: (p.platz or 999, p.name.lower()))]
 
 
 def _types(p: Profile, avg_majority: float) -> list[str]:
