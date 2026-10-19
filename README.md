@@ -61,6 +61,8 @@ kicktipp-tipper freigeben --nur-leere    # nur Spiele, die du noch nicht getippt
 
 In der Oberfläche sind die Spiele vorausgewählt, deren abgegebener Tipp von der Empfehlung abweicht. Du kannst Tipps überschreiben und Spiele an- oder abwählen. Ein Klick auf **„Auswahl freigeben“** gibt die Tipps nach einer Rückfrage ab. Anschließend lädt das Tool die Seite neu und prüft, ob Kicktipp jeden Tipp übernommen hat. Jede Freigabe landet im Protokoll.
 
+**Geänderte Empfehlungen:** Ändert sich eine Empfehlung, nachdem du sie gesehen hast, etwa weil sich die Rundenquote oder die Wettquoten bewegt haben, wird das Spiel markiert. Die Markierung zeigt den vorherigen und den neuen Tipp sowie den Grund. Sie bleibt, bis du auf „Gesehen“ klickst oder den Tipp freigibst. Der Browser-Tab zeigt die Zahl der Änderungen, z. B. „(2) Kicktipp-Tipper“.
+
 **Sicherheitsnetz (optional):** Mit `auto_freigabe_minuten_vor_anpfiff = 60` werden Spiele, für die eine Stunde vor Anpfiff noch kein Tipp abgegeben ist, automatisch mit der Empfehlung getippt. Bereits abgegebene Tipps werden dabei nie überschrieben.
 
 ## Betrieb auf einem Server / NAS

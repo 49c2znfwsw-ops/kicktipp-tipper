@@ -110,3 +110,47 @@ def test_no_matches_saves_diagnosis(tmp_path, monkeypatch):
     with pytest.raises(KicktippError, match="keine Spiele erkannt"):
         KicktippClient("r", "u", "p", session=Empty()).matchday()
     assert (tmp_path / "kicktipp-tippabgabe-diagnose.html").exists()
+
+
+def test_change_marker_when_round_quote_moves(tmp_path, monkeypatch):
+    monkeypatch.setattr(t, "FakeKicktipp", RealFake)
+    engine, session = t.make_engine(
+        tmp_path, rules=ScoringRules(quote=QuoteRule(3, 10)), strategieverbot=StrategyBan(2 / 3, 9), anzahl_tipper=25
+    )
+    first = engine.refresh()
+    assert not any(m["aenderung"] for m in first["matches"])  # erster Stand = Ausgangsstand
+    hoff = next(m for m in first["matches"] if m["home"] == "1899 Hoffenheim")
+    assert hoff["tip"][0] > hoff["tip"][1]  # Runde tippt Leverkusen -> Heimtipp lohnt
+
+    # Die Runde schwenkt um: jetzt tippen fast alle Hoffenheim
+    session.html = session.html.replace("10 - 4 - 5", "3 - 10 - 10")
+    second = engine.refresh()
+    hoff2 = next(m for m in second["matches"] if m["home"] == "1899 Hoffenheim")
+    assert hoff2["tip"] != hoff["tip"]
+    ch = hoff2["aenderung"]
+    assert ch["vorher"] == hoff["tip"]
+    assert any("Rundenquote 10-4-5 → 3-10-10" in g for g in ch["gruende"])
+
+    # Bleibt bei weiterer Aktualisierung bestehen, bis bestätigt
+    assert next(m for m in engine.refresh()["matches"] if m["key"] == hoff2["key"])["aenderung"]
+    engine.mark_seen([hoff2["key"]])
+    assert not any(m["aenderung"] for m in engine.state["matches"] if m["key"] == hoff2["key"])
+    assert not next(m for m in engine.refresh()["matches"] if m["key"] == hoff2["key"])["aenderung"]
+
+
+def test_seen_api_and_release_clears_marker(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(t, "FakeKicktipp", RealFake)
+    engine, session = t.make_engine(tmp_path, rules=ScoringRules(quote=QuoteRule(3, 10)), anzahl_tipper=25)
+    engine.refresh()
+    session.html = session.html.replace("10 - 4 - 5", "3 - 10 - 10").replace("10 - 5 - 4", "3 - 10 - 10")
+    state = engine.refresh()
+    changed = [m for m in state["matches"] if m["aenderung"]]
+    assert changed
+    client = TestClient(t.create_app(engine, background=False))
+    first = changed[0]
+    engine.release(7, {first["key"]: tuple(first["tip"])})
+    assert not next(m for m in engine.state["matches"] if m["key"] == first["key"])["aenderung"]
+    after = client.post("/api/seen", json={"keys": None}).json()
+    assert not any(m["aenderung"] for m in after["matches"])

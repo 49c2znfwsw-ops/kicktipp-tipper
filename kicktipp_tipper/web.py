@@ -28,6 +28,10 @@ class Tip(BaseModel):
     gast: int = Field(ge=0, le=99)
 
 
+class SeenRequest(BaseModel):
+    keys: list[str] | None = None  # None = alle
+
+
 class ReleaseRequest(BaseModel):
     spieltag: int | None = None
     tips: list[Tip]
@@ -89,6 +93,10 @@ def create_app(engine: Engine, background: bool = True) -> FastAPI:
         except Exception as e:
             raise HTTPException(502, f"Freigabe fehlgeschlagen: {e}")
         return engine.state
+
+    @app.post("/api/seen", dependencies=[Depends(auth)])
+    def seen(req: SeenRequest):
+        return engine.mark_seen(req.keys)
 
     @app.get("/api/releases", dependencies=[Depends(auth)])
     def releases():

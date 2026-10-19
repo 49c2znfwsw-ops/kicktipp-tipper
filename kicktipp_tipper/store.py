@@ -20,6 +20,8 @@ class Store:
                     id INTEGER PRIMARY KEY, created_at TEXT, spieltag INTEGER, match_key TEXT,
                     home TEXT, away TEXT, tip_home INTEGER, tip_away INTEGER,
                     mode TEXT, ok INTEGER, message TEXT);
+                CREATE TABLE IF NOT EXISTS seen (
+                    match_key TEXT PRIMARY KEY, seen_at TEXT, data TEXT);
                 CREATE TABLE IF NOT EXISTS crowd_obs (
                     match_key TEXT PRIMARY KEY, created_at TEXT,
                     p_home REAL, p_draw REAL, p_away REAL, q_home INTEGER, q_draw INTEGER, q_away INTEGER);
@@ -72,3 +74,16 @@ class Store:
         with self._lock:
             rows = self._db.execute("SELECT p_home, p_draw, p_away, q_home, q_draw, q_away FROM crowd_obs").fetchall()
         return [((r[0], r[1], r[2]), (r[3], r[4], r[5])) for r in rows]
+
+    def seen(self) -> dict[str, dict]:
+        """Zuletzt bestätigter Stand je Spiel (Empfehlung, Rundenquote, Wahrscheinlichkeiten)."""
+        with self._lock:
+            rows = self._db.execute("SELECT match_key, seen_at, data FROM seen").fetchall()
+        return {k: {**json.loads(d), "seen_at": at} for k, at, d in rows}
+
+    def set_seen(self, items: dict[str, dict]) -> None:
+        with self._lock, self._db:
+            self._db.executemany(
+                "INSERT OR REPLACE INTO seen (match_key, seen_at, data) VALUES (?, ?, ?)",
+                [(k, self._now(), json.dumps(v)) for k, v in items.items()],
+            )

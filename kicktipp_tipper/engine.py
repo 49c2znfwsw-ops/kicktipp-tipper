@@ -45,6 +45,8 @@ class Recommendation:
     # Strategieverbot
     tip_ohne_verbot: list[int] | None = None
     hinweis: str | None = None
+    # Empfehlung weicht vom zuletzt bestätigten Stand ab: {"vorher", "seit", "gruende"}
+    aenderung: dict | None = None
 
 
 def _tendency(tip) -> int:
@@ -239,6 +241,7 @@ class Engine:
             cm = self.crowd_model()
             recs = [self.recommend(m, ratings, market, cm) for m in md.matches]
             self.apply_strategy_ban(recs)
+            self._mark_changes(recs)
             self._learn_crowd(md, recs)
             ban = self.cfg.strategieverbot
             self.state = {
@@ -261,6 +264,40 @@ class Engine:
                 },
             }
             self.store.save_snapshot(md.index, self.state)
+            return self.state
+
+    # ---- Änderungen seit dem letzten Bestätigen ------------------------------------
+    @staticmethod
+    def _seen_record(r: Recommendation | dict) -> dict:
+        get = r.get if isinstance(r, dict) else lambda k: getattr(r, k)
+        return {"tip": get("tip"), "round_quote": get("round_quote"), "probs": get("probs"), "hinweis": get("hinweis")}
+
+    def _mark_changes(self, recs: list[Recommendation]) -> None:
+        seen = self.store.seen()
+        baseline = {}
+        for r in recs:
+            if not r.tip:
+                continue
+            old = seen.get(r.key)
+            if old is None:
+                baseline[r.key] = self._seen_record(r)  # erstes Mal gesehen: Ausgangsstand
+            elif old["tip"] != r.tip and r.open:
+                r.aenderung = {"vorher": old["tip"], "seit": old["seen_at"], "gruende": _change_reasons(old, r)}
+        if baseline:
+            self.store.set_seen(baseline)
+
+    def mark_seen(self, keys: list[str] | None = None) -> dict | None:
+        """Aktuelle Empfehlungen als gesehen bestätigen (alle oder nur die genannten Spiele)."""
+        with self._lock:
+            if not self.state:
+                return None
+            items = {}
+            for m in self.state["matches"]:
+                if m["tip"] and (keys is None or m["key"] in keys):
+                    items[m["key"]] = self._seen_record(m)
+                    m["aenderung"] = None
+            self.store.set_seen(items)
+            self.store.save_snapshot(self.state.get("spieltag"), self.state)
             return self.state
 
     def _learn_crowd(self, md: Matchday, recs: list[Recommendation]) -> None:
@@ -300,6 +337,8 @@ class Engine:
             for k, (h, a) in tips.items():
                 self.store.log_release(after.index, k, *names.get(k, ("?", "?")), h, a, mode, True)
             self.refresh(after.index)
+            if mode == "manuell":
+                self.mark_seen(list(tips))  # wer freigibt, hat die Empfehlung gesehen
             return after
 
     def auto_release_due(self, now: datetime | None = None) -> dict[str, tuple[int, int]]:
@@ -349,6 +388,22 @@ class Engine:
                 log.warning("Aktualisierung fehlgeschlagen: %s", e)
                 log.debug("Details", exc_info=True)
             stop.wait(self.next_interval())
+
+
+def _change_reasons(old: dict, r: Recommendation) -> list[str]:
+    reasons = []
+    oq, nq = old.get("round_quote"), r.round_quote
+    if oq and nq and list(oq) != list(nq):
+        reasons.append(f"Rundenquote {'-'.join(map(str, oq))} → {'-'.join(map(str, nq))}")
+    op, np_ = old.get("probs"), r.probs
+    if op and np_:
+        before = [round(op[k] * 100) for k in ("heim", "remis", "gast")]
+        after = [round(np_[k] * 100) for k in ("heim", "remis", "gast")]
+        if max(abs(a - b) for a, b in zip(before, after)) >= 2:
+            reasons.append(f"Wahrscheinlichkeiten H/U/A {'/'.join(map(str, before))} % → {'/'.join(map(str, after))} %")
+    if bool(old.get("hinweis")) != bool(r.hinweis):
+        reasons.append("Strategieverbot (andere Tipps des Spieltags)")
+    return reasons or ["Neuberechnung (z. B. neue Ergebnisdaten)"]
 
 
 def _top_scores(probs, n: int) -> list[dict]:

@@ -46,6 +46,12 @@ main { max-width: 980px; margin: 0 auto; padding: 16px; }
 .chip { display: inline-block; background: var(--chip); border-radius: 999px; padding: 1px 8px; margin: 2px 4px 0 0; font-variant-numeric: tabular-nums; }
 .chip.best { color: var(--ok); font-weight: 600; }
 .hint { grid-column: 2 / 4; font-size: 13px; color: var(--warn); }
+.match.changed { border-color: var(--warn); box-shadow: inset 4px 0 0 var(--warn); }
+.change { grid-column: 2 / 4; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 13px;
+  background: var(--chip); border-radius: 8px; padding: 6px 10px; }
+.change b { color: var(--warn); }
+.change button { padding: 2px 10px; font-size: 13px; }
+#seenAll { display: none; border-color: var(--warn); color: var(--warn); }
 .quote { font-variant-numeric: tabular-nums; }
 .status-ok { color: var(--ok); } .status-diff { color: var(--warn); } .status-none { color: var(--err); }
 summary { cursor: pointer; }
@@ -70,6 +76,7 @@ h2 { font-size: 15px; margin: 0 0 8px; }
       <span id="md">Spieltag –</span>
       <button id="next" title="Nächster Spieltag">›</button>
     </div>
+    <button id="seenAll">Alle Änderungen gesehen</button>
     <button id="refresh">Aktualisieren</button>
     <button id="release" class="primary">Auswahl freigeben</button>
   </div>
@@ -128,7 +135,12 @@ function render() {
         <span style="width:${p.heim*100}%"></span><span style="width:${p.remis*100}%"></span><span style="width:${p.gast*100}%"></span></div>` : "";
     const alts = m.tip ? `<span class="chip best">${tipStr(m.tip)} · ${m.expected_points.toFixed(2)} Pkt.</span>` + m.alternatives.map((a) => `<span class="chip">${a.tip} · ${a.ev.toFixed(2)}</span>`).join("") : "Keine Datenquelle für dieses Spiel.";
     const preselect = m.open && m.tip && tipStr(m.current_tip) !== tipStr(m.tip);
-    return `<div class="match ${m.open ? "" : "closed"}" data-key="${esc(m.key)}">
+    const ch = m.aenderung;
+    const change = ch ? `<div class="change"><b>Empfehlung geändert</b>
+        <span>vorher ${tipStr(ch.vorher)} → jetzt ${tipStr(m.tip)} (seit ${fmtTime(ch.seit)})</span>
+        <span>${ch.gruende.map(esc).join(" · ")}</span>
+        <button class="seen" data-key="${esc(m.key)}">Gesehen</button></div>` : "";
+    return `<div class="match ${m.open ? "" : "closed"} ${ch ? "changed" : ""}" data-key="${esc(m.key)}">
       <input type="checkbox" class="sel" ${preselect ? "checked" : ""} ${m.open ? "" : "disabled"} aria-label="auswählen">
       <div class="teams">${esc(m.home)} – ${esc(m.away)}</div>
       <div class="tipbox">
@@ -140,6 +152,7 @@ function render() {
         ${m.lambdas ? `<span>xG ${m.lambdas[0]} : ${m.lambdas[1]}</span>` : ""}
         ${m.expected_quote ? `<span class="quote" title="Tendenzpunkte nach Quotenregel: aktuell bei Kicktipp angezeigt / erwartet bei Tippschluss, falls du so tippst">Rundenquote ${m.round_quote ? m.round_quote.join("-") : "–"} · erwartet ${m.expected_quote.map((x) => x.toFixed(1)).join("-")}</span>` : ""}</div>
       ${bar}
+      ${change}
       ${m.hinweis ? `<div class="hint">${esc(m.hinweis)}</div>` : ""}
       <div class="details">${alts}
         ${p ? `<details><summary>Details</summary>Wahrscheinlichste Ergebnisse: ${p.top_ergebnisse.map((e) => `${e.ergebnis} (${(e.p*100).toFixed(1)} %)`).join(", ")}<br>Quellen: ${esc(m.sources.join(", "))}</details>` : ""}
@@ -148,6 +161,10 @@ function render() {
   }).join("");
   dirty = false;
   document.querySelectorAll(".sel").forEach((cb) => cb.addEventListener("change", () => { dirty = true; }));
+  const nChanged = state.matches.filter((m) => m.aenderung).length;
+  document.title = (nChanged ? `(${nChanged}) ` : "") + "Kicktipp-Tipper";
+  $("seenAll").style.display = nChanged ? "inline-block" : "none";
+  document.querySelectorAll(".seen").forEach((b) => b.addEventListener("click", () => markSeen([b.dataset.key])));
   document.querySelectorAll(".tipbox input").forEach((inp) => inp.addEventListener("input", (e) => {
     dirty = true;
     const card = e.target.closest(".match");
@@ -187,6 +204,11 @@ async function refresh(spieltag) {
   finally { $("refresh").disabled = false; }
 }
 
+async function markSeen(keys) {
+  try { state = await api("/api/seen", { keys }); render(); }
+  catch (e) { notice(e.message, "err"); }
+}
+$("seenAll").onclick = () => markSeen(null);
 $("refresh").onclick = () => refresh(state?.spieltag ?? null);
 $("prev").onclick = () => state?.spieltag && refresh(state.spieltag - 1);
 $("next").onclick = () => refresh(state?.spieltag != null ? state.spieltag + 1 : null);
