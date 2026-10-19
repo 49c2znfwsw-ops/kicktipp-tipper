@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html><body>
+<!-- Nachbau der Kicktipp-Tippabgabe-Seite (Struktur wie von Kicktipp-Bots beschrieben) -->
+<form id="tippabgabeForm" action="/meine-runde/tippabgabe" method="post">
+<input type="hidden" name="_charset_" value="UTF-8">
+<input type="hidden" name="spieltagIndex" value="7">
+<input type="hidden" name="bonus" value="false">
+<table id="tippabgabeSpiele">
+<thead><tr><th>Termin</th><th>Heim</th><th>Gast</th><th>Tipp</th><th>Quote</th></tr></thead>
+<tbody>
+<tr class="datarow">
+  <td class="nw kicktipp-time">17.10.26 20:30</td>
+  <td class="nw col1">Bayern München</td>
+  <td class="nw col2">Borussia Dortmund</td>
+  <td class="nw kicktipp-tippabgabe col4">2:1</td>
+  <td class="nw kicktipp-wettquote"><a class="wettquote-link">Quote: 1,55 / 4,50 / 5,25</a></td>
+  <td class="nw kicktipp-quote">3-8-10</td>
+</tr>
+<tr class="datarow">
+  <td class="nw kicktipp-time">18.10.26 15:30</td>
+  <td class="nw col1">Werder Bremen</td>
+  <td class="nw col2">VfB Stuttgart</td>
+  <td class="nw kicktipp-tippabgabe">
+    <input type="hidden" name="spieltippForms[1001].tippAbgegeben" value="true">
+    <input type="text" name="spieltippForms[1001].heimTipp" value="1" size="2">
+    <input type="text" name="spieltippForms[1001].gastTipp" value="1" size="2">
+  </td>
+  <td class="nw kicktipp-wettquote"><a class="wettquote-link">Quote: 2,90 / 3,60 / 2,35</a></td>
+  <td class="nw kicktipp-quote">5-6-4</td>
+</tr>
+<tr class="datarow">
+  <td class="nw kicktipp-time"></td>
+  <td class="nw col1">1. FC Köln</td>
+  <td class="nw col2">Bayer 04 Leverkusen</td>
+  <td class="nw kicktipp-tippabgabe">
+    <input type="hidden" name="spieltippForms[1002].tippAbgegeben" value="false">
+    <input type="text" name="spieltippForms[1002].heimTipp" value="" size="2">
+    <input type="text" name="spieltippForms[1002].gastTipp" value="" size="2">
+  </td>
+  <td class="nw kicktipp-wettquote"><a class="wettquote-link">Quote: 4,80 / 4,10 / 1,65</a></td>
+  <td class="nw kicktipp-quote">10-10-3</td>
+</tr>
+</tbody></table>
+<input type="submit" name="submitbutton" value="Tipps speichern">
+</form>
+</body></html>

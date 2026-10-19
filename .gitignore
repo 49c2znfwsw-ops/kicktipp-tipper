@@ -1,0 +1,9 @@
+__pycache__/
+*.egg-info/
+.env
+config.toml
+*.sqlite
+.pytest_cache/
+.venv/
+kicktipp-login-diagnose.html
+kicktipp-tippabgabe-diagnose.html

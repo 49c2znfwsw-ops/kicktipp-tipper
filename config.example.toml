@@ -1,0 +1,80 @@
+# Konfiguration für kicktipp-tipper. Kopieren nach config.toml und anpassen.
+# Zugangsdaten gehören NICHT hierher, sondern in Umgebungsvariablen (siehe .env.example).
+
+[kicktipp]
+# Name der Tipprunde, wie er in der URL steht: https://www.kicktipp.de/<runde>/
+runde = "meine-tipprunde"
+
+[wettbewerb]
+# OpenLigaDB-Kürzel für Ergebnisdaten (bl1 = 1. Bundesliga, bl2 = 2. Bundesliga, ...)
+openligadb_liga = "bl1"
+# Saison-Startjahr (2026 = Saison 2026/27). Die Vorsaison wird automatisch mit einbezogen.
+saison = 2026
+# Sport-Key bei The Odds API (nur genutzt, wenn ODDS_API_KEY gesetzt ist)
+odds_api_sport = "soccer_germany_bundesliga"
+
+# Punktevergabe der Tipprunde (steht bei Kicktipp unter "Spielregeln").
+# Die Werte unten entsprechen "Punkteregel 5 - 14 Punkte": Quotenregel 3..10 für die richtige
+# Tendenz plus 2 (Tendenz) / 3 (Tordifferenz) / 4 (Ergebnis). Für feste Punkte ohne Quote
+# [punkte.quote] aktiv = false setzen; Kicktipp-Standard ist dann 2/3/4.
+# Für Unentschieden gibt es bei Kicktipp keine Tordifferenz-Wertung.
+[punkte.quote]
+aktiv = true
+min = 3
+max = 10
+
+[punkte.heimsieg]
+tendenz = 2
+tordifferenz = 3
+ergebnis = 4
+
+[punkte.unentschieden]
+tendenz = 2
+ergebnis = 4
+
+[punkte.auswaertssieg]
+tendenz = 2
+tordifferenz = 3
+ergebnis = 4
+
+# Nur relevant bei Quotenregel: wie tippt der Rest der Runde?
+[tipprunde]
+# Anzahl der Tipper, die üblicherweise einen Tipp abgeben (inkl. dir)
+anzahl_tipper = 20
+# Die aktuelle Rundenquote jedes Spiels wird bei jeder Aktualisierung von Kicktipp gelesen.
+# Bis zum Anpfiff tippen aber noch weitere Mitglieder; daher wird sie mit dem Modell unten gemischt.
+# Gewicht der aktuell angezeigten Rundenquote (0..1):
+gewicht_rundenquote = 0.75
+# Startwerte des Tippverhaltens: Anteil je Tendenz ~ Wahrscheinlichkeit^Exponent, Remis zusätzlich * Faktor.
+# Exponent > 1: Favoriten werden häufiger getippt, als sie gewinnen. Faktor < 1: Remis wird selten getippt.
+favoriten_exponent = 1.5
+remis_faktor = 0.7
+# Aus den Rundenquoten abgelaufener Spiele automatisch nachjustieren (sobald >= 10 Spiele beobachtet)
+tippverhalten_lernen = true
+
+# Strategieverbot: höchstens dieser Anteil der Tipps eines Spieltags mit gleichem Ergebnis
+# (2:1 = 1:2), gilt erst ab der angegebenen Spielanzahl.
+[strategieverbot]
+aktiv = true
+max_anteil = "2/3"
+ab_spielen = 9
+
+[modell]
+# Gewicht der Wettquoten gegenüber dem eigenen Ergebnismodell (0..1).
+# Quoten sind meist die beste Einzelquelle, daher hoch gewichtet.
+gewicht_quoten = 0.8
+# Dixon-Coles-Korrektur für knappe Ergebnisse (0:0, 1:0, 0:1, 1:1). Typisch -0.05 bis -0.15.
+rho = -0.08
+# Halbwertszeit in Tagen, mit der alte Spiele im Ergebnismodell an Gewicht verlieren
+halbwertszeit_tage = 180
+# Größtes Ergebnis, das als Tipp in Frage kommt
+max_tore_tipp = 5
+
+[betrieb]
+# Wie oft Quoten und Spiele neu geladen werden
+aktualisieren_minuten = 30
+# Automatische Freigabe als Sicherheitsnetz: Spiele ohne abgegebenen Tipp werden
+# so viele Minuten vor Anpfiff mit der Empfehlung getippt. 0 = aus.
+auto_freigabe_minuten_vor_anpfiff = 0
+# SQLite-Datei für Empfehlungen und Freigabe-Protokoll
+datenbank = "kicktipp-tipper.sqlite"

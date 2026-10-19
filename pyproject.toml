@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kicktipp-tipper"
+version = "0.2.0"
+description = "Tipp-Empfehlungen für eine Kicktipp-Tipprunde aus Wettquoten und Ergebnisdaten, mit Freigabe per Web-Oberfläche"
+requires-python = ">=3.11"
+dependencies = [
+  "requests>=2.31",
+  "beautifulsoup4>=4.12",
+  "numpy>=1.26",
+  "scipy>=1.11",
+  "fastapi>=0.110",
+  "uvicorn>=0.29",
+  "tzdata>=2024.1",  # Zeitzonen für Windows
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "httpx>=0.27"]
+
+[project.scripts]
+kicktipp-tipper = "kicktipp_tipper.cli:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.setuptools.packages.find]
+include = ["kicktipp_tipper*"]
+
+[tool.setuptools.package-data]
+kicktipp_tipper = ["static/*"]

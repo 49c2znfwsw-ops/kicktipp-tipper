@@ -1,0 +1,8 @@
+FROM python:3.12-slim
+WORKDIR /app
+COPY pyproject.toml ./
+COPY kicktipp_tipper ./kicktipp_tipper
+RUN pip install --no-cache-dir .
+WORKDIR /data
+EXPOSE 8000
+CMD ["kicktipp-tipper", "-c", "/data/config.toml", "serve", "--host", "0.0.0.0", "--port", "8000"]

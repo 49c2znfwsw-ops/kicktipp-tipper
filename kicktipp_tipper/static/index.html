@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kicktipp-Tipper</title>
+<style>
+:root {
+  --bg: #f6f7f9; --card: #ffffff; --text: #16191d; --muted: #626b76; --line: #e2e5e9;
+  --accent: #1f6feb; --accent-text: #ffffff; --ok: #1a7f37; --warn: #9a6700; --err: #cf222e;
+  --home: #1f6feb; --draw: #8c959f; --away: #bf3989; --chip: #eef1f4;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1116; --card: #161b22; --text: #e6edf3; --muted: #9198a1; --line: #2a313a;
+    --accent: #4493f8; --accent-text: #0e1116; --ok: #3fb950; --warn: #d29922; --err: #f85149;
+    --home: #4493f8; --draw: #6e7681; --away: #db61a2; --chip: #21262d;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { position: sticky; top: 0; z-index: 2; background: var(--card); border-bottom: 1px solid var(--line); }
+.bar { max-width: 980px; margin: 0 auto; padding: 12px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+h1 { font-size: 17px; margin: 0; font-weight: 650; }
+.sub { color: var(--muted); font-size: 13px; }
+.spacer { flex: 1; }
+button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+button:disabled { opacity: .5; cursor: default; }
+main { max-width: 980px; margin: 0 auto; padding: 16px; }
+.nav { display: flex; align-items: center; gap: 8px; }
+.notice { padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; background: var(--chip); font-size: 14px; }
+.notice.err { color: var(--err); }
+.notice.ok { color: var(--ok); }
+.match { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px;
+  display: grid; grid-template-columns: 24px 1fr auto; gap: 4px 12px; align-items: center; }
+.match.closed { opacity: .6; }
+.teams { font-weight: 600; }
+.meta { grid-column: 2 / 4; color: var(--muted); font-size: 13px; display: flex; gap: 12px; flex-wrap: wrap; }
+.tipbox { display: flex; align-items: center; gap: 4px; }
+.tipbox input { width: 42px; padding: 6px; text-align: center; font: inherit; font-weight: 650; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
+.tipbox input.changed { border-color: var(--warn); }
+.probs { grid-column: 2 / 4; display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--chip); margin-top: 4px; }
+.probs span:nth-child(1) { background: var(--home); } .probs span:nth-child(2) { background: var(--draw); } .probs span:nth-child(3) { background: var(--away); }
+.details { grid-column: 2 / 4; font-size: 13px; color: var(--muted); }
+.chip { display: inline-block; background: var(--chip); border-radius: 999px; padding: 1px 8px; margin: 2px 4px 0 0; font-variant-numeric: tabular-nums; }
+.chip.best { color: var(--ok); font-weight: 600; }
+.hint { grid-column: 2 / 4; font-size: 13px; color: var(--warn); }
+.quote { font-variant-numeric: tabular-nums; }
+.status-ok { color: var(--ok); } .status-diff { color: var(--warn); } .status-none { color: var(--err); }
+summary { cursor: pointer; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+td, th { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+section { margin-top: 24px; }
+h2 { font-size: 15px; margin: 0 0 8px; }
+.legend { display: flex; gap: 12px; font-size: 12px; color: var(--muted); margin-bottom: 10px; flex-wrap: wrap; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div>
+      <h1 id="title">Kicktipp-Tipper</h1>
+      <div class="sub" id="updated">lädt …</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="nav">
+      <button id="prev" title="Voriger Spieltag">‹</button>
+      <span id="md">Spieltag –</span>
+      <button id="next" title="Nächster Spieltag">›</button>
+    </div>
+    <button id="refresh">Aktualisieren</button>
+    <button id="release" class="primary">Auswahl freigeben</button>
+  </div>
+</header>
+<main>
+  <div id="notice"></div>
+  <div class="legend">
+    <span><i style="background:var(--home)"></i>Heimsieg</span>
+    <span><i style="background:var(--draw)"></i>Remis</span>
+    <span><i style="background:var(--away)"></i>Auswärtssieg</span>
+    <span id="rules"></span>
+  </div>
+  <div id="matches"></div>
+  <section>
+    <h2>Freigabe-Protokoll</h2>
+    <table><thead><tr><th>Zeit</th><th>Spiel</th><th>Tipp</th><th>Art</th><th>Status</th></tr></thead><tbody id="log"></tbody></table>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let state = null;
+let dirty = false; // ungespeicherte Änderungen nicht durch Auto-Aktualisierung überschreiben
+
+const fmtTime = (iso) => iso ? new Date(iso).toLocaleString("de-DE", { timeZone: "Europe/Berlin", weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "–";
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const tipStr = (t) => t ? `${t[0]}:${t[1]}` : "–";
+
+function notice(msg, kind = "") {
+  $("notice").innerHTML = msg ? `<div class="notice ${kind}">${esc(msg)}</div>` : "";
+}
+
+async function api(path, body) {
+  const res = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || res.statusText);
+  return data;
+}
+
+function render() {
+  if (!state || !state.matches.length) { $("matches").innerHTML = `<div class="notice">Noch keine Daten – „Aktualisieren“ drücken.</div>`; return; }
+  $("title").textContent = `Kicktipp-Tipper · ${state.runde}`;
+  $("md").textContent = `Spieltag ${state.spieltag ?? "–"}`;
+  const q = state.quellen || {};
+  const src = [q.rundenquote && "Rundenquote", q.odds_api && "Odds API", q.kicktipp_quoten && "Kicktipp-Wettquoten", q.ergebnismodell && "Ergebnismodell"].filter(Boolean).join(", ") || "keine Quelle";
+  $("updated").textContent = `Stand ${fmtTime(state.updated_at)} · Quellen: ${src}`;
+  const sv = state.strategieverbot || {};
+  const bad = Object.entries(sv.verstoesse_aktuell || {});
+  if (bad.length) notice(`Achtung Strategieverbot: höchstens ${sv.grenze} gleiche Ergebnisse, getippt ist ${bad.map(([k, v]) => `${k} ${v}×`).join(", ")}.`, "err");
+  $("matches").innerHTML = state.matches.map((m) => {
+    const t = m.tip || m.current_tip || ["", ""];
+    const status = !m.current_tip ? `<span class="status-none">noch nicht getippt</span>`
+      : (m.tip && tipStr(m.current_tip) === tipStr(m.tip)) ? `<span class="status-ok">Empfehlung ist getippt</span>`
+      : `<span class="status-diff">getippt ${tipStr(m.current_tip)}${m.current_tip_points != null ? ` (${m.current_tip_points.toFixed(2)} Pkt.)` : ""}</span>`;
+    const p = m.probs;
+    const bar = p ? `<div class="probs" title="Heim ${(p.heim*100).toFixed(0)} % · Remis ${(p.remis*100).toFixed(0)} % · Gast ${(p.gast*100).toFixed(0)} %">
+        <span style="width:${p.heim*100}%"></span><span style="width:${p.remis*100}%"></span><span style="width:${p.gast*100}%"></span></div>` : "";
+    const alts = m.tip ? `<span class="chip best">${tipStr(m.tip)} · ${m.expected_points.toFixed(2)} Pkt.</span>` + m.alternatives.map((a) => `<span class="chip">${a.tip} · ${a.ev.toFixed(2)}</span>`).join("") : "Keine Datenquelle für dieses Spiel.";
+    const preselect = m.open && m.tip && tipStr(m.current_tip) !== tipStr(m.tip);
+    return `<div class="match ${m.open ? "" : "closed"}" data-key="${esc(m.key)}">
+      <input type="checkbox" class="sel" ${preselect ? "checked" : ""} ${m.open ? "" : "disabled"} aria-label="auswählen">
+      <div class="teams">${esc(m.home)} – ${esc(m.away)}</div>
+      <div class="tipbox">
+        <input inputmode="numeric" class="h" value="${t[0]}" ${m.open ? "" : "disabled"} aria-label="Tore Heim">:
+        <input inputmode="numeric" class="a" value="${t[1]}" ${m.open ? "" : "disabled"} aria-label="Tore Gast">
+      </div>
+      <div class="meta"><span>${fmtTime(m.kickoff)}${m.open ? "" : " · geschlossen"}</span><span>${status}</span>
+        ${p ? `<span>H ${(p.heim*100).toFixed(0)} % · U ${(p.remis*100).toFixed(0)} % · A ${(p.gast*100).toFixed(0)} %</span>` : ""}
+        ${m.lambdas ? `<span>xG ${m.lambdas[0]} : ${m.lambdas[1]}</span>` : ""}
+        ${m.expected_quote ? `<span class="quote" title="Tendenzpunkte nach Quotenregel: aktuell bei Kicktipp angezeigt / erwartet bei Tippschluss, falls du so tippst">Rundenquote ${m.round_quote ? m.round_quote.join("-") : "–"} · erwartet ${m.expected_quote.map((x) => x.toFixed(1)).join("-")}</span>` : ""}</div>
+      ${bar}
+      ${m.hinweis ? `<div class="hint">${esc(m.hinweis)}</div>` : ""}
+      <div class="details">${alts}
+        ${p ? `<details><summary>Details</summary>Wahrscheinlichste Ergebnisse: ${p.top_ergebnisse.map((e) => `${e.ergebnis} (${(e.p*100).toFixed(1)} %)`).join(", ")}<br>Quellen: ${esc(m.sources.join(", "))}</details>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+  dirty = false;
+  document.querySelectorAll(".sel").forEach((cb) => cb.addEventListener("change", () => { dirty = true; }));
+  document.querySelectorAll(".tipbox input").forEach((inp) => inp.addEventListener("input", (e) => {
+    dirty = true;
+    const card = e.target.closest(".match");
+    card.querySelector(".sel").checked = true;
+    const m = state.matches.find((x) => x.key === card.dataset.key);
+    const cur = `${card.querySelector(".h").value}:${card.querySelector(".a").value}`;
+    card.querySelectorAll(".tipbox input").forEach((i) => i.classList.toggle("changed", m.tip && cur !== tipStr(m.tip)));
+  }));
+}
+
+async function loadLog() {
+  const rows = await api("/api/releases");
+  $("log").innerHTML = rows.map((r) => `<tr><td>${fmtTime(r.created_at)}</td><td>${esc(r.home)} – ${esc(r.away)}</td>
+    <td>${r.tip_home}:${r.tip_away}</td><td>${esc(r.mode)}</td><td class="${r.ok ? "status-ok" : "status-none"}">${r.ok ? "übernommen" : esc(r.message)}</td></tr>`).join("")
+    || `<tr><td colspan="5" class="sub">Noch nichts freigegeben.</td></tr>`;
+}
+
+async function load() {
+  const data = await api("/api/state");
+  state = data.state;
+  const r = data.regeln;
+  const fmt = (o) => `${o.tendenz}/${o.tordifferenz}/${o.ergebnis}`;
+  $("rules").textContent = (r.quote ? `Quotenregel ${r.quote.min}–${r.quote.max} + ` : "") + `Tendenz/Differenz/Ergebnis: Sieg ${fmt(r.heimsieg)} · Remis ${r.unentschieden.tendenz}/${r.unentschieden.ergebnis}`
+    + (data.strategieverbot ? ` · Strategieverbot max. ${data.strategieverbot}` : "")
+    + (data.auto_freigabe_minuten ? ` · Auto-Freigabe ${data.auto_freigabe_minuten} Min. vor Anpfiff` : "");
+  render();
+  loadLog();
+  // Ohne Spiele direkt neu laden, damit ein Fehler sichtbar wird
+  if (!state || !state.matches.length) refresh(state?.spieltag ?? null);
+}
+
+async function refresh(spieltag) {
+  $("refresh").disabled = true;
+  notice("Lade Spiele und Quoten …");
+  try { state = await api("/api/refresh", { spieltag }); notice(""); render(); }
+  catch (e) { notice(e.message, "err"); }
+  finally { $("refresh").disabled = false; }
+}
+
+$("refresh").onclick = () => refresh(state?.spieltag ?? null);
+$("prev").onclick = () => state?.spieltag && refresh(state.spieltag - 1);
+$("next").onclick = () => refresh(state?.spieltag != null ? state.spieltag + 1 : null);
+$("release").onclick = async () => {
+  const tips = [...document.querySelectorAll(".match")].filter((c) => c.querySelector(".sel").checked).map((c) => ({
+    key: c.dataset.key, heim: parseInt(c.querySelector(".h").value, 10), gast: parseInt(c.querySelector(".a").value, 10),
+    name: c.querySelector(".teams").textContent,
+  }));
+  if (!tips.length) return notice("Kein Spiel ausgewählt.", "err");
+  if (tips.some((t) => isNaN(t.heim) || isNaN(t.gast))) return notice("Bitte für jedes ausgewählte Spiel beide Tore eintragen.", "err");
+  if (!confirm(`Diese ${tips.length} Tipp(s) bei Kicktipp abgeben?\n\n` + tips.map((t) => `${t.name}: ${t.heim}:${t.gast}`).join("\n"))) return;
+  $("release").disabled = true;
+  notice("Gebe Tipps ab …");
+  try {
+    state = await api("/api/release", { spieltag: state.spieltag, tips: tips.map(({ key, heim, gast }) => ({ key, heim, gast })) });
+    notice(`${tips.length} Tipp(s) abgegeben und von Kicktipp bestätigt.`, "ok");
+    render(); loadLog();
+  } catch (e) { notice(e.message, "err"); loadLog(); }
+  finally { $("release").disabled = false; }
+};
+
+load().catch((e) => notice(e.message, "err"));
+setInterval(() => api("/api/state").then((d) => { if (d.state?.updated_at !== state?.updated_at && !dirty) { state = d.state; render(); } }), 60000);
+</script>
+</body>
+</html>

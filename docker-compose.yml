@@ -1,0 +1,12 @@
+services:
+  kicktipp-tipper:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      KICKTIPP_DB: /data/db/kicktipp-tipper.sqlite
+    ports:
+      - "127.0.0.1:8000:8000"   # nur lokal; für Zugriff von außen UI_PASSWORD setzen und Reverse-Proxy mit HTTPS davor
+    volumes:
+      - ./config.toml:/data/config.toml:ro
+      - ./data:/data/db
