@@ -23,7 +23,8 @@ class QuoteRule:
     def points(self, t: int, n: int) -> float:
         if n <= 0 or t <= 0:
             return self.max
-        raw = self.max / (10 * t / n) - self.max / 10 + self.min
+        # Reihenfolge wie bei Kicktipp (erst T/N): an der Rundungsgrenze ergibt das z. B. 7,4999… -> 7
+        raw = self.max / (10 * (t / n)) - self.max / 10 + self.min
         return float(min(self.max, max(self.min, math.floor(raw + 0.5))))
 
     def implied_share(self, q: float) -> float:

@@ -7,18 +7,23 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 
+import time
+
 from . import crowd, model
+from .profiles import Profiles
 from .config import Config
 from .optimizer import optimize, violations
 from .scoring import TipValue, rank_tips
 from .sources import oddsapi, openligadb
-from .sources.kicktipp import KicktippClient, KicktippMatch, Matchday
+from .sources.kicktipp import KicktippClient, KicktippError, KicktippMatch, Matchday
 from .store import Store
 from .teams import best_match
 
 log = logging.getLogger(__name__)
 
 RATINGS_TTL = timedelta(hours=6)
+HISTORY_TTL = timedelta(hours=6)
+MIN_PROFILES = 5  # ab so vielen profilierten Mitspielern ersetzen die Profile das grobe Rundenmodell
 # So lange vor Anpfiff wird häufiger aktualisiert, weil sich die Rundenquote noch bewegt
 HOT_WINDOW = timedelta(hours=3)
 HOT_INTERVAL_S = 5 * 60
@@ -42,6 +47,8 @@ class Recommendation:
     # Quotenregel
     round_quote: list[int] | None = None  # aktuell bei Kicktipp angezeigt (Heim-Remis-Gast)
     expected_quote: list[float] | None = None  # erwartete Tendenzpunkte zum Tippschluss, falls ich so tippe
+    runde_basis: list[float] | None = None  # Tendenz-Anteile der Runde, auf denen die Mitspieler-Prognose aufsetzt
+    erwartete_tipper: float | None = None
     # Strategieverbot
     tip_ohne_verbot: list[int] | None = None
     hinweis: str | None = None
@@ -73,6 +80,9 @@ class Engine:
         self._lock = threading.RLock()
         self._ranked: dict[str, list[TipValue]] = {}
         self.state: dict | None = store.latest_snapshot()
+        self.me_id: str | None = (self.state or {}).get("ich")
+        self._profiles: Profiles | None = None
+        self._history_at: datetime | None = None
 
     # ---- Quellen -----------------------------------------------------------------
     def ratings(self) -> model.TeamRatings | None:
@@ -161,15 +171,25 @@ class Engine:
         rule = cfg.rules.quote
         if rule:
             model_shares = (crowd_model or cfg.crowd).shares(ph, pd, pa)
+            n_tippers = cfg.anzahl_tipper
+            profiles = self.profiles()
+            if profiles and len(profiles.others()) >= MIN_PROFILES:
+                # Prognose je Mitspieler, aufgesetzt auf den aktuellen Stand der Runde (sonst Wettquoten-Modell)
+                basis = crowd.shares_from_quote(rule, m.round_quote) if m.round_quote else model_shares
+                model_shares, expected_n = profiles.crowd_forecast(m.home, m.away, basis)
+                n_tippers = max(2, round(expected_n))
+                rec.runde_basis = [round(x, 3) for x in basis]
+                rec.erwartete_tipper = round(expected_n, 1)
+                sources.append(f"Mitspieler-Profile (≈{expected_n:.0f} aktive Tipper)")
             shares = crowd.others_shares(
                 rule,
                 m.round_quote,
                 model_shares,
-                cfg.anzahl_tipper,
+                n_tippers,
                 _tendency(current) if current else None,
                 cfg.gewicht_rundenquote if m.open else 1.0,
             )
-            quote_points = crowd.expected_quote_points(rule, shares, cfg.anzahl_tipper)
+            quote_points = crowd.expected_quote_points(rule, shares, n_tippers)
             rec.expected_quote = [round(q, 2) for q in quote_points]
             sources.append("Rundenquote (Kicktipp)" if m.round_quote else "Rundenquote geschätzt (noch nicht angezeigt)")
 
@@ -233,9 +253,92 @@ class Engine:
                     if [t.home, t.away] != tip
                 ][:5]
 
+    # ---- Historie und Mitspieler-Profile --------------------------------------------
+    def profiles(self) -> Profiles | None:
+        if self._profiles is None:
+            history = self.store.history()
+            if history["tips"]:
+                self._profiles = Profiles(history, self.me_id)
+        return self._profiles
+
+    def load_history(self, force: bool = False, pause_s: float = 0.5) -> dict:
+        """Tippübersichten aller bisherigen Spieltage laden; abgeschlossene nur einmal."""
+        with self._lock:
+            current = (self.state or {}).get("spieltag")
+            if current is None:
+                current = self.client.matchday().index
+            loaded = self.store.loaded_spieltage()
+            fetched, errors = [], []
+            for idx in range(1, (current or 0) + 1):
+                if not force and loaded.get(idx, {}).get("complete"):
+                    continue
+                try:
+                    ov = self.client.tippuebersicht(idx)
+                except KicktippError as e:
+                    errors.append(f"Spieltag {idx}: {e}")
+                    continue
+                complete = bool(ov.matches) and all(m.result for m in ov.matches)
+                self.store.save_overview(idx, ov, complete)
+                fetched.append(idx)
+                if pause_s:
+                    time.sleep(pause_s)  # Kicktipp nicht mit Anfragen überhäufen
+            self._profiles = None
+            self._history_at = datetime.now(timezone.utc)
+            return {"geladen": fetched, "fehler": errors, "spieltage": sorted(self.store.loaded_spieltage())}
+
+    def history_due(self) -> bool:
+        return self._history_at is None or datetime.now(timezone.utc) - self._history_at > HISTORY_TTL
+
+    def mitspieler(self) -> dict:
+        """Profile plus Prognose je Mitspieler für die offenen Spiele des aktuellen Spieltags."""
+        profiles = self.profiles()
+        if profiles is None:
+            return {"profile": [], "prognosen": [], "spieltage": sorted(self.store.loaded_spieltage()), "ich": self.me_id}
+        rule = self.cfg.rules.quote or crowd.QuoteRule()
+        prognosen = []
+        for m in (self.state or {}).get("matches", []):
+            if not m["open"] or not m["probs"]:
+                continue
+            basis = m.get("runde_basis") or list(
+                crowd.shares_from_quote(rule, m["round_quote"]) if m.get("round_quote")
+                else self.cfg.crowd.shares(m["probs"]["heim"], m["probs"]["remis"], m["probs"]["gast"])
+            )
+            prognosen.append({
+                "key": m["key"], "home": m["home"], "away": m["away"],
+                "tipper": {mid: [round(float(x), 3) for x in profiles.predict(mid, m["home"], m["away"], basis)]
+                           for mid in profiles.others()},
+            })
+        return {"profile": profiles.as_dict(), "prognosen": prognosen,
+                "spieltage": sorted(self.store.loaded_spieltage()), "ich": self.me_id}
+
+    def verlauf(self) -> dict:
+        """Kumulierte Punkte, Spieltagspunkte und Platz je Mitspieler und Spieltag."""
+        rows = self.store.history()["members"]
+        spieltage = sorted({r["spieltag"] for r in rows})
+        series: dict[str, dict] = {}
+        for r in rows:
+            s = series.setdefault(r["member_id"], {"member_id": r["member_id"], "name": r["name"],
+                                                   "ich": r["member_id"] == self.me_id,
+                                                   "gesamt": [None] * len(spieltage),
+                                                   "spieltag": [None] * len(spieltage),
+                                                   "platz": [None] * len(spieltage)})
+            i = spieltage.index(r["spieltag"])
+            s["gesamt"][i], s["spieltag"][i], s["name"] = r["total"], r["day_points"], r["name"]
+        for i in range(len(spieltage)):
+            ranked = sorted((s for s in series.values() if s["gesamt"][i] is not None), key=lambda s: -s["gesamt"][i])
+            pos, prev = 0, None
+            for n, s in enumerate(ranked, 1):
+                if s["gesamt"][i] != prev:
+                    pos, prev = n, s["gesamt"][i]
+                s["platz"][i] = pos
+        return {"spieltage": spieltage, "reihen": sorted(series.values(), key=lambda s: s["platz"][-1] or 999) if spieltage else []}
+
     def refresh(self, index: int | None = None) -> dict:
         with self._lock:
             md = self.client.matchday(index)
+            if md.tipper_id and md.tipper_id != self.me_id:
+                self.me_id = md.tipper_id
+                self._profiles = None
             ratings = self.ratings()
             market = self.market()
             cm = self.crowd_model()
@@ -256,6 +359,7 @@ class Engine:
                     "rundenquote": any(m.round_quote for m in md.matches),
                 },
                 "tippverhalten": asdict(cm),
+                "ich": self.me_id,
                 "strategieverbot": {
                     "grenze": ban.cap(len(recs)) if ban else None,
                     "verstoesse_aktuell": violations(
@@ -365,6 +469,12 @@ class Engine:
     def tick(self) -> None:
         # Ohne Index zeigt Kicktipp den aktuellen bzw. nächsten Spieltag
         self.refresh(None)
+        if self.history_due():
+            try:
+                self.load_history()
+                self.refresh(None)  # Empfehlungen mit frischen Profilen
+            except Exception as e:
+                log.warning("Tipp-Historie nicht geladen: %s", e)
         due = self.auto_release_due()
         if due:
             log.info("Automatische Freigabe für %d Spiel(e)", len(due))

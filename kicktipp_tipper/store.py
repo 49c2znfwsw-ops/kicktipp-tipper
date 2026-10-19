@@ -22,6 +22,17 @@ class Store:
                     mode TEXT, ok INTEGER, message TEXT);
                 CREATE TABLE IF NOT EXISTS seen (
                     match_key TEXT PRIMARY KEY, seen_at TEXT, data TEXT);
+                CREATE TABLE IF NOT EXISTS hist_matches (
+                    match_key TEXT PRIMARY KEY, spieltag INTEGER, pos INTEGER, home TEXT, away TEXT,
+                    kickoff TEXT, result TEXT, round_quote TEXT);
+                CREATE TABLE IF NOT EXISTS hist_tips (
+                    match_key TEXT, member_id TEXT, spieltag INTEGER, tip TEXT, points INTEGER,
+                    PRIMARY KEY (match_key, member_id));
+                CREATE TABLE IF NOT EXISTS hist_members (
+                    spieltag INTEGER, member_id TEXT, name TEXT, day_points INTEGER, total INTEGER,
+                    PRIMARY KEY (spieltag, member_id));
+                CREATE TABLE IF NOT EXISTS hist_loaded (
+                    spieltag INTEGER PRIMARY KEY, loaded_at TEXT, complete INTEGER);
                 CREATE TABLE IF NOT EXISTS crowd_obs (
                     match_key TEXT PRIMARY KEY, created_at TEXT,
                     p_home REAL, p_draw REAL, p_away REAL, q_home INTEGER, q_draw INTEGER, q_away INTEGER);
@@ -87,3 +98,61 @@ class Store:
                 "INSERT OR REPLACE INTO seen (match_key, seen_at, data) VALUES (?, ?, ?)",
                 [(k, self._now(), json.dumps(v)) for k, v in items.items()],
             )
+
+    # ---- Historie aus der Tippübersicht ------------------------------------------------
+    def save_overview(self, spieltag: int, ov, complete: bool) -> None:
+        with self._lock, self._db:
+            self._db.execute("DELETE FROM hist_matches WHERE spieltag = ?", (spieltag,))
+            self._db.execute("DELETE FROM hist_tips WHERE spieltag = ?", (spieltag,))
+            self._db.execute("DELETE FROM hist_members WHERE spieltag = ?", (spieltag,))
+            for pos, m in enumerate(ov.matches):
+                self._db.execute(
+                    "INSERT OR REPLACE INTO hist_matches VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (m.key, spieltag, pos, m.home, m.away, m.kickoff.isoformat() if m.kickoff else None,
+                     json.dumps(m.result), json.dumps(m.round_quote)),
+                )
+            for mb in ov.members:
+                self._db.execute(
+                    "INSERT OR REPLACE INTO hist_members VALUES (?, ?, ?, ?, ?)",
+                    (spieltag, mb.member_id, mb.name, mb.matchday_points, mb.total),
+                )
+                for m, tip, pts in zip(ov.matches, mb.tips, mb.points):
+                    if tip is not None:
+                        self._db.execute(
+                            "INSERT OR REPLACE INTO hist_tips VALUES (?, ?, ?, ?, ?)",
+                            (m.key, mb.member_id, spieltag, json.dumps(tip), pts),
+                        )
+            self._db.execute(
+                "INSERT OR REPLACE INTO hist_loaded VALUES (?, ?, ?)", (spieltag, self._now(), int(complete))
+            )
+
+    def loaded_spieltage(self) -> dict[int, dict]:
+        with self._lock:
+            rows = self._db.execute("SELECT spieltag, loaded_at, complete FROM hist_loaded").fetchall()
+        return {r[0]: {"loaded_at": r[1], "complete": bool(r[2])} for r in rows}
+
+    def history(self) -> dict:
+        with self._lock:
+            matches = self._db.execute(
+                "SELECT match_key, spieltag, pos, home, away, kickoff, result, round_quote FROM hist_matches"
+                " ORDER BY spieltag, pos"
+            ).fetchall()
+            tips = self._db.execute("SELECT match_key, member_id, spieltag, tip, points FROM hist_tips").fetchall()
+            members = self._db.execute(
+                "SELECT spieltag, member_id, name, day_points, total FROM hist_members ORDER BY spieltag"
+            ).fetchall()
+        return {
+            "matches": [
+                {"key": k, "spieltag": st, "pos": p, "home": h, "away": a, "kickoff": ko,
+                 "result": json.loads(r) if r else None, "round_quote": json.loads(q) if q else None}
+                for k, st, p, h, a, ko, r, q in matches
+            ],
+            "tips": [
+                {"match_key": k, "member_id": mid, "spieltag": st, "tip": json.loads(t), "points": pts}
+                for k, mid, st, t, pts in tips
+            ],
+            "members": [
+                {"spieltag": st, "member_id": mid, "name": n, "day_points": dp, "total": tot}
+                for st, mid, n, dp, tot in members
+            ],
+        }

@@ -9,13 +9,21 @@
   --bg: #f6f7f9; --card: #ffffff; --text: #16191d; --muted: #626b76; --line: #e2e5e9;
   --accent: #1f6feb; --accent-text: #ffffff; --ok: #1a7f37; --warn: #9a6700; --err: #cf222e;
   --home: #1f6feb; --draw: #8c959f; --away: #bf3989; --chip: #eef1f4;
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --context: #c9cdd2; --grid: #e6e8eb;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0e1116; --card: #161b22; --text: #e6edf3; --muted: #9198a1; --line: #2a313a;
     --accent: #4493f8; --accent-text: #0e1116; --ok: #3fb950; --warn: #d29922; --err: #f85149;
     --home: #4493f8; --draw: #6e7681; --away: #db61a2; --chip: #21262d;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --context: #3a414a; --grid: #262c33;
   }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1116; --card: #161b22; --text: #e6edf3; --muted: #9198a1; --line: #2a313a;
+  --accent: #4493f8; --accent-text: #0e1116; --ok: #3fb950; --warn: #d29922; --err: #f85149;
+  --home: #4493f8; --draw: #6e7681; --away: #db61a2; --chip: #21262d;
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --context: #3a414a; --grid: #262c33;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -52,6 +60,28 @@ main { max-width: 980px; margin: 0 auto; padding: 16px; }
 .change b { color: var(--warn); }
 .change button { padding: 2px 10px; font-size: 13px; }
 #seenAll { display: none; border-color: var(--warn); color: var(--warn); }
+.tabs { max-width: 980px; margin: 0 auto; padding: 0 16px; display: flex; gap: 4px; }
+.tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 12px; color: var(--muted); }
+.tabs button.on { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+.tab { display: none; } .tab.on { display: block; }
+.scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.ptable { min-width: 760px; font-variant-numeric: tabular-nums; }
+.ptable td, .ptable th { white-space: nowrap; }
+.ptable tr.me td { font-weight: 600; }
+.mini { display: inline-flex; width: 90px; height: 8px; border-radius: 4px; overflow: hidden; background: var(--chip); vertical-align: middle; }
+.mini span { height: 100%; } .mini span + span { margin-left: 2px; }
+.cellp { display: inline-block; min-width: 54px; padding: 2px 6px; border-radius: 6px; text-align: center; font-size: 12px; }
+.toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; font-size: 14px; }
+.chart { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 16px; }
+.chart h3 { font-size: 14px; margin: 0 0 6px; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.tip { position: absolute; pointer-events: none; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+  font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.12); display: none; min-width: 150px; z-index: 3; }
+.tip .row { display: flex; gap: 8px; align-items: center; } .tip .row b { min-width: 34px; text-align: right; }
+.key { display: inline-block; width: 14px; height: 2px; border-radius: 1px; }
+.pick { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+.pick button { padding: 3px 9px; font-size: 13px; border-radius: 999px; }
+.pick button.sel1 { border-color: var(--series-1); } .pick button.sel2 { border-color: var(--series-2); } .pick button.sel3 { border-color: var(--series-3); }
 .quote { font-variant-numeric: tabular-nums; }
 .status-ok { color: var(--ok); } .status-diff { color: var(--warn); } .status-none { color: var(--err); }
 summary { cursor: pointer; }
@@ -80,9 +110,15 @@ h2 { font-size: 15px; margin: 0 0 8px; }
     <button id="refresh">Aktualisieren</button>
     <button id="release" class="primary">Auswahl freigeben</button>
   </div>
+  <nav class="tabs" role="tablist">
+    <button data-tab="tipps" class="on" role="tab">Tipps</button>
+    <button data-tab="mitspieler" role="tab">Mitspieler</button>
+    <button data-tab="verlauf" role="tab">Verlauf</button>
+  </nav>
 </header>
 <main>
   <div id="notice"></div>
+  <div id="tab-tipps" class="tab on">
   <div class="legend">
     <span><i style="background:var(--home)"></i>Heimsieg</span>
     <span><i style="background:var(--draw)"></i>Remis</span>
@@ -94,6 +130,32 @@ h2 { font-size: 15px; margin: 0 0 8px; }
     <h2>Freigabe-Protokoll</h2>
     <table><thead><tr><th>Zeit</th><th>Spiel</th><th>Tipp</th><th>Art</th><th>Status</th></tr></thead><tbody id="log"></tbody></table>
   </section>
+  </div>
+
+  <div id="tab-mitspieler" class="tab">
+    <div class="toolbar"><span id="histInfo" class="sub"></span><button id="histLoad">Historie neu laden</button></div>
+    <section>
+      <h2>Prognose für die offenen Spiele</h2>
+      <p class="sub">Wahrscheinlichste Tendenz je Mitspieler, aus dessen bisherigem Tippverhalten und dem aktuellen Stand der Runde.</p>
+      <div class="scroll"><table class="ptable" id="progTable"></table></div>
+    </section>
+    <section>
+      <h2>Profile</h2>
+      <p class="sub">Tendenz: eigene Anteile Heim/Remis/Auswärts (oben) gegen die übrige Runde in denselben Spielen (unten). Mehrheit: wie oft mit der Mehrheit der Runde getippt.</p>
+      <div class="scroll"><table class="ptable" id="profTable"></table></div>
+    </section>
+  </div>
+
+  <div id="tab-verlauf" class="tab">
+    <p class="sub">Hervorgehoben: du und bis zu zwei Mitspieler – zum Vergleichen Namen anklicken. Die übrigen Mitspieler sind grau im Hintergrund.</p>
+    <div class="pick" id="pick"></div>
+    <div class="chart"><h3>Gesamtpunkte nach Spieltag</h3><div id="chartTotal"></div></div>
+    <div class="chart"><h3>Platzierung nach Spieltag</h3><div id="chartRank"></div></div>
+    <section>
+      <h2>Tabelle</h2>
+      <div class="scroll"><table class="ptable" id="verlaufTable"></table></div>
+    </section>
+  </div>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -230,7 +292,167 @@ $("release").onclick = async () => {
   finally { $("release").disabled = false; }
 };
 
+// ---- Reiter ----------------------------------------------------------------------------
+let currentTab = "tipps";
+function showTab(name) {
+  currentTab = name;
+  document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
+  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("on", t.id === "tab-" + name));
+  document.querySelector(".nav").style.display = name === "tipps" ? "" : "none";
+  $("release").style.display = name === "tipps" ? "" : "none";
+  if (name !== "tipps") $("seenAll").style.display = "none"; else if (state) render();
+  try { localStorage.setItem("tab", name); } catch (e) {}
+  if (name === "mitspieler") loadMitspieler();
+  if (name === "verlauf") loadVerlauf();
+}
+document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+
+// ---- Mitspieler -------------------------------------------------------------------------
+const pct = (x) => x == null ? "–" : `${Math.round(x * 100)} %`;
+const TEND = ["Heim", "Remis", "Ausw."];
+const TCOL = ["var(--home)", "var(--draw)", "var(--away)"];
+function miniBar(a) {
+  return `<span class="mini">${a.map((x, i) => `<span style="width:${x * 100}%;background:${TCOL[i]}"></span>`).join("")}</span>`;
+}
+async function loadMitspieler() {
+  let d;
+  try { d = await api("/api/mitspieler"); } catch (e) { return notice(e.message, "err"); }
+  $("histInfo").textContent = d.spieltage.length
+    ? `Tipp-Historie: Spieltag ${d.spieltage[0]}–${d.spieltage[d.spieltage.length - 1]} geladen (${d.profile.length} Mitspieler)`
+    : "Noch keine Tipp-Historie geladen.";
+  if (!d.profile.length) {
+    $("progTable").innerHTML = ""; $("profTable").innerHTML = `<tr><td class="sub">„Historie neu laden“ drücken.</td></tr>`;
+    return;
+  }
+  const names = Object.fromEntries(d.profile.map((p) => [p.member_id, p]));
+  // Prognose-Matrix
+  const games = d.prognosen;
+  const others = d.profile.filter((p) => !p.ich && p.teilnahme >= 0.2);
+  $("progTable").innerHTML = games.length ? `<thead><tr><th>Mitspieler</th><th>tippt zu</th>${games.map((g) => `<th title="${esc(g.home)} – ${esc(g.away)}">${esc(g.home.slice(0, 10))}<br><span class="sub">${esc(g.away.slice(0, 10))}</span></th>`).join("")}</tr></thead>
+    <tbody>${others.map((p) => `<tr><td>${esc(p.name)}</td><td>${pct(p.teilnahme)}</td>${games.map((g) => {
+      const pr = g.tipper[p.member_id]; if (!pr) return "<td>–</td>";
+      const k = pr.indexOf(Math.max(...pr));
+      return `<td><span class="cellp" style="background:color-mix(in srgb, ${TCOL[k]} ${Math.round(pr[k] * 45)}%, transparent)" title="Heim ${pct(pr[0])} · Remis ${pct(pr[1])} · Ausw. ${pct(pr[2])}">${TEND[k]} ${pct(pr[k])}</span></td>`;
+    }).join("")}</tr>`).join("")}
+    <tr><td><b>Runde erwartet</b></td><td></td>${games.map((g) => {
+      let s = [0, 0, 0], w = 0;
+      others.forEach((p) => { const pr = g.tipper[p.member_id]; if (pr) { pr.forEach((x, i) => s[i] += x * p.teilnahme); w += p.teilnahme; } });
+      return `<td>${miniBar(s.map((x) => x / (w || 1)))}</td>`;
+    }).join("")}</tr></tbody>` : `<tr><td class="sub">Keine offenen Spiele.</td></tr>`;
+  // Profile
+  $("profTable").innerHTML = `<thead><tr><th>Platz</th><th>Name</th><th>Punkte</th><th>Pkt./Spiel</th><th>Tendenz</th><th>H/U/A</th><th>Mehrheit</th><th>Lieblingstipps</th><th>Ø Tore</th><th>Tendenz richtig</th><th>Exakt</th><th>tippt zu</th><th>Typ</th><th>Vereine</th></tr></thead>
+    <tbody>${d.profile.map((p) => `<tr class="${p.ich ? "me" : ""}"><td>${p.platz ?? "–"}</td><td>${esc(p.name)}${p.ich ? " (du)" : ""}</td><td>${p.punkte ?? "–"}</td>
+      <td>${p.punkte_je_spiel ?? "–"}</td><td>${p.spiele ? miniBar(p.anteile) + "<br>" + miniBar(p.anteile_runde) : "–"}</td>
+      <td>${p.spiele ? p.anteile.map((x) => Math.round(x * 100)).join("/") : "–"}</td><td>${p.spiele ? pct(p.mehrheit) : "–"}</td>
+      <td>${p.lieblingsergebnisse.map((e) => `${e.ergebnis} (${pct(e.anteil)})`).join(", ") || "–"}</td><td>${p.spiele ? p.tore : "–"}</td>
+      <td>${pct(p.trefferquote)}</td><td>${pct(p.exakt)}</td><td>${pct(p.teilnahme)}</td>
+      <td>${p.typ.map((t) => `<span class="chip">${esc(t)}</span>`).join("")}</td>
+      <td>${p.vereine.map((v) => `${esc(v.verein)} ${v.faktor >= 1 ? "↑" : "↓"}`).join(", ")}</td></tr>`).join("")}</tbody>`;
+}
+$("histLoad").onclick = async () => {
+  $("histLoad").disabled = true; notice("Lade Tippübersichten aller Spieltage …");
+  try {
+    const r = await api("/api/historie", { alles: true });
+    notice(`Historie geladen: Spieltag ${r.spieltage.join(", ")}` + (r.fehler.length ? ` · Fehler: ${r.fehler.join("; ")}` : ""), r.fehler.length ? "err" : "ok");
+    loadMitspieler();
+  } catch (e) { notice(e.message, "err"); }
+  finally { $("histLoad").disabled = false; }
+};
+
+// ---- Verlauf ----------------------------------------------------------------------------
+let verlauf = null, picked = [];
+try { picked = JSON.parse(localStorage.getItem("picked") || "[]"); } catch (e) {}
+function highlight() {
+  // Farbe folgt der Person, nicht dem Rang: du = Slot 1, Auswahl = Slot 2/3 in Klick-Reihenfolge
+  const me = verlauf.reihen.find((r) => r.ich);
+  const list = [];
+  if (me) list.push([me, "var(--series-1)"]);
+  picked.forEach((id, i) => { const r = verlauf.reihen.find((x) => x.member_id === id); if (r && !r.ich) list.push([r, `var(--series-${i + 2})`]); });
+  return list;
+}
+async function loadVerlauf() {
+  try { verlauf = await api("/api/verlauf"); } catch (e) { return notice(e.message, "err"); }
+  picked = picked.filter((id) => verlauf.reihen.some((r) => r.member_id === id && !r.ich)).slice(0, 2);
+  renderVerlauf();
+}
+function renderVerlauf() {
+  if (!verlauf.spieltage.length) {
+    ["chartTotal", "chartRank"].forEach((id) => $(id).innerHTML = `<p class="sub">Noch keine Tipp-Historie – im Reiter „Mitspieler“ laden.</p>`);
+    $("pick").innerHTML = ""; $("verlaufTable").innerHTML = ""; return;
+  }
+  const hl = highlight();
+  $("pick").innerHTML = verlauf.reihen.filter((r) => !r.ich).map((r) => {
+    const i = picked.indexOf(r.member_id);
+    return `<button data-id="${esc(r.member_id)}" class="${i >= 0 ? "sel" + (i + 2) : ""}" aria-pressed="${i >= 0}">${esc(r.name)}</button>`;
+  }).join("");
+  document.querySelectorAll("#pick button").forEach((b) => b.addEventListener("click", () => {
+    const id = b.dataset.id, i = picked.indexOf(id);
+    if (i >= 0) picked.splice(i, 1); else { picked.push(id); if (picked.length > 2) picked.shift(); }
+    try { localStorage.setItem("picked", JSON.stringify(picked)); } catch (e) {}
+    renderVerlauf();
+  }));
+  lineChart($("chartTotal"), "gesamt", false, hl);
+  lineChart($("chartRank"), "platz", true, hl);
+  const st = verlauf.spieltage;
+  $("verlaufTable").innerHTML = `<thead><tr><th>Name</th>${st.map((s) => `<th>ST ${s}</th>`).join("")}</tr></thead><tbody>${verlauf.reihen.map((r) =>
+    `<tr class="${r.ich ? "me" : ""}"><td>${esc(r.name)}</td>${st.map((s, i) => `<td>${r.gesamt[i] ?? "–"} <span class="sub">(${r.platz[i] ?? "–"}.)</span></td>`).join("")}</tr>`).join("")}</tbody>`;
+}
+function lineChart(el, field, invert, hl) {
+  const st = verlauf.spieltage, W = Math.max(320, el.clientWidth || 900), H = 280;
+  const m = { l: 40, r: W < 500 ? 120 : 160, t: 10, b: 28 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const vals = verlauf.reihen.flatMap((r) => r[field].filter((v) => v != null));
+  let lo = invert ? 1 : 0, hi = Math.max(...vals, 1);
+  if (!invert) { const step = Math.pow(10, Math.floor(Math.log10(hi))) / 2; hi = Math.ceil(hi / step) * step; }
+  const x = (i) => m.l + (st.length === 1 ? iw / 2 : (i * iw) / (st.length - 1));
+  const y = (v) => invert ? m.t + ((v - lo) / Math.max(hi - lo, 1)) * ih : m.t + ih - ((v - lo) / (hi - lo)) * ih;
+  const ticks = invert ? [1, ...[5, 10, 15, 20, 25].filter((t) => t <= hi)] : [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(lo + f * (hi - lo)));
+  const path = (r) => r[field].map((v, i) => v == null ? null : `${x(i)},${y(v)}`).filter(Boolean).map((p, i) => (i ? "L" : "M") + p).join("");
+  const hlIds = new Set(hl.map(([r]) => r.member_id));
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${field === "gesamt" ? "Gesamtpunkte" : "Platzierung"} je Spieltag">`;
+  ticks.forEach((t) => { svg += `<line x1="${m.l}" x2="${m.l + iw}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${m.l - 8}" y="${y(t) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${t}${invert ? "." : ""}</text>`; });
+  // Achsenbeschriftung ausdünnen, damit sie nicht überlappt
+  const gap = st.length > 1 ? iw / (st.length - 1) : iw, short = gap < 40, every = Math.ceil((short ? 22 : 40) / gap);
+  st.forEach((s, i) => { if (i % every === 0 || i === st.length - 1) svg += `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--muted)">${short ? s : "ST " + s}</text>`; });
+  verlauf.reihen.filter((r) => !hlIds.has(r.member_id)).forEach((r) => { svg += `<path d="${path(r)}" fill="none" stroke="var(--context)" stroke-width="1.5"/>`; });
+  // Endbeschriftungen gegen Überlappung auseinanderziehen
+  const labels = [];
+  hl.forEach(([r, col]) => {
+    svg += `<path d="${path(r)}" fill="none" stroke="${col}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+    r[field].forEach((v, i) => { if (v != null) svg += `<circle cx="${x(i)}" cy="${y(v)}" r="4" fill="${col}" stroke="var(--card)" stroke-width="2"/>`; });
+    const li = r[field].map((v, i) => v == null ? -1 : i).filter((i) => i >= 0).pop();
+    const nm = r.name.length > 14 ? r.name.slice(0, 13) + "…" : r.name;
+    if (li != null) labels.push({ y: y(r[field][li]), x: x(li), text: `${nm}${r.ich ? " (du)" : ""} · ${r[field][li]}${invert ? "." : ""}` });
+  });
+  labels.sort((a, b) => a.y - b.y).forEach((l, i, arr) => { if (i && l.y - arr[i - 1].y < 14) l.y = arr[i - 1].y + 14; });
+  labels.forEach((l) => { svg += `<text x="${l.x + 10}" y="${l.y + 4}" font-size="12" fill="var(--text)">${esc(l.text)}</text>`; });
+  svg += `<line class="xh" x1="0" x2="0" y1="${m.t}" y2="${m.t + ih}" stroke="var(--muted)" stroke-dasharray="3 3" visibility="hidden"/>`;
+  svg += `<rect x="${m.l - 20}" y="0" width="${iw + 40}" height="${H}" fill="transparent" class="hit" tabindex="0"/></svg><div class="tip"></div>`;
+  el.innerHTML = svg;
+  const s = el.querySelector("svg"), tip = el.querySelector(".tip"), xh = el.querySelector(".xh");
+  const show = (i) => {
+    xh.setAttribute("x1", x(i)); xh.setAttribute("x2", x(i)); xh.setAttribute("visibility", "visible");
+    const leader = [...verlauf.reihen].filter((r) => r.gesamt[i] != null).sort((a, b) => b.gesamt[i] - a.gesamt[i])[0];
+    const rows = hl.map(([r, col]) => [r, col]);
+    if (leader && !hlIds.has(leader.member_id)) rows.push([leader, "var(--context)"]);
+    tip.innerHTML = `<div class="sub">Spieltag ${st[i]}</div>` + rows.map(([r, col]) =>
+      `<div class="row"><span class="key" style="background:${col}"></span><b>${r[field][i] ?? "–"}${invert ? "." : ""}</b><span class="sub"></span></div>`).join("");
+    tip.querySelectorAll(".row .sub").forEach((n, k) => { n.textContent = rows[k][0].name + (rows[k][0] === leader ? " (Platz 1)" : ""); });
+    tip.style.display = "block";
+    const px = (x(i) / W) * s.clientWidth;
+    tip.style.left = Math.min(px + 16, el.clientWidth - tip.offsetWidth - 4) + "px"; tip.style.top = "36px";
+  };
+  const hide = () => { tip.style.display = "none"; xh.setAttribute("visibility", "hidden"); };
+  const nearest = (evt) => { const r = s.getBoundingClientRect(); const px = ((evt.clientX - r.left) / r.width) * W;
+    let best = 0; st.forEach((_, i) => { if (Math.abs(x(i) - px) < Math.abs(x(best) - px)) best = i; }); return best; };
+  const hit = el.querySelector(".hit");
+  hit.addEventListener("pointermove", (e) => show(nearest(e)));
+  hit.addEventListener("pointerleave", hide);
+  hit.addEventListener("focus", () => show(st.length - 1)); hit.addEventListener("blur", hide);
+}
+window.addEventListener("resize", () => { if (currentTab === "verlauf" && verlauf) renderVerlauf(); });
+
 load().catch((e) => notice(e.message, "err"));
+try { const t = localStorage.getItem("tab"); if (t && t !== "tipps") showTab(t); } catch (e) {}
 setInterval(() => api("/api/state").then((d) => { if (d.state?.updated_at !== state?.updated_at && !dirty) { state = d.state; render(); } }), 60000);
 </script>
 </body>

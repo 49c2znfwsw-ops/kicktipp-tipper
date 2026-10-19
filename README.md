@@ -63,6 +63,23 @@ In der Oberfläche sind die Spiele vorausgewählt, deren abgegebener Tipp von de
 
 **Geänderte Empfehlungen:** Ändert sich eine Empfehlung, nachdem du sie gesehen hast, etwa weil sich die Rundenquote oder die Wettquoten bewegt haben, wird das Spiel markiert. Die Markierung zeigt den vorherigen und den neuen Tipp sowie den Grund. Sie bleibt, bis du auf „Gesehen“ klickst oder den Tipp freigibst. Der Browser-Tab zeigt die Zahl der Änderungen, z. B. „(2) Kicktipp-Tipper“.
 
+### Reiter „Mitspieler“
+
+Nach Ablauf der Tippzeit zeigt Kicktipp allen Mitgliedern die Tipps der anderen in der Tippübersicht. Das Tool lädt diese Übersicht für alle bisherigen Spieltage. Abgeschlossene Spieltage lädt es nur einmal, danach prüft es alle 6 Stunden auf Neues. Daraus entsteht ein Profil je Mitspieler:
+
+- Tendenz-Anteile im Vergleich zur übrigen Runde
+- wie oft jemand mit der Mehrheit tippt
+- Lieblingsergebnisse und Ø Tore
+- Trefferquote und Teilnahme
+- auffällige Vereinsvorlieben
+- eine Typ-Einordnung, z. B. „Mitläufer“, „Querdenker“ oder „Remis-Fan“
+
+Daraus folgt eine **Prognose je Mitspieler und offenem Spiel**. Diese Prognosen ersetzen in den Empfehlungen die grobe Schätzung des Rundenverhaltens. Sie liefern außerdem die erwartete Zahl aktiver Tipper, denn für die Quote zählen nur abgegebene Tipps. Die Daten bleiben lokal in der Datenbank auf deinem Rechner.
+
+### Reiter „Verlauf“
+
+Gesamtpunkte und Platzierung je Spieltag als Liniendiagramme. Du bist hervorgehoben, und bis zu zwei Mitspieler kannst du zum Vergleich anklicken. Fährst du mit der Maus über das Diagramm, siehst du die Werte. Darunter steht derselbe Verlauf als Tabelle.
+
 **Sicherheitsnetz (optional):** Mit `auto_freigabe_minuten_vor_anpfiff = 60` werden Spiele, für die eine Stunde vor Anpfiff noch kein Tipp abgegeben ist, automatisch mit der Empfehlung getippt. Bereits abgegebene Tipps werden dabei nie überschrieben.
 
 ## Betrieb auf einem Server / NAS

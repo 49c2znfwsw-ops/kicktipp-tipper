@@ -32,6 +32,10 @@ class SeenRequest(BaseModel):
     keys: list[str] | None = None  # None = alle
 
 
+class HistoryRequest(BaseModel):
+    alles: bool = False  # auch abgeschlossene Spieltage neu laden
+
+
 class ReleaseRequest(BaseModel):
     spieltag: int | None = None
     tips: list[Tip]
@@ -97,6 +101,23 @@ def create_app(engine: Engine, background: bool = True) -> FastAPI:
     @app.post("/api/seen", dependencies=[Depends(auth)])
     def seen(req: SeenRequest):
         return engine.mark_seen(req.keys)
+
+    @app.get("/api/mitspieler", dependencies=[Depends(auth)])
+    def mitspieler():
+        return engine.mitspieler()
+
+    @app.get("/api/verlauf", dependencies=[Depends(auth)])
+    def verlauf():
+        return engine.verlauf()
+
+    @app.post("/api/historie", dependencies=[Depends(auth)])
+    def historie(req: HistoryRequest):
+        try:
+            result = engine.load_history(force=req.alles)
+            engine.refresh(None)  # Empfehlungen mit den neuen Profilen
+        except Exception as e:
+            raise HTTPException(502, f"Historie nicht geladen: {e}")
+        return result
 
     @app.get("/api/releases", dependencies=[Depends(auth)])
     def releases():

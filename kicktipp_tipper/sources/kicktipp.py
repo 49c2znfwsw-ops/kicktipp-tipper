@@ -57,6 +57,10 @@ class Matchday:
     form_action: str | None
     form_fields: list[tuple[str, str]] = field(default_factory=list)  # alle übrigen Formularfelder
 
+    @property
+    def tipper_id(self) -> str | None:
+        return dict(self.form_fields).get("tipperId")
+
 
 def _int_or_none(value: str | None) -> int | None:
     try:
@@ -338,6 +342,9 @@ class KicktippClient:
             )
         return md
 
+    def tippuebersicht(self, index: int) -> "Overview":
+        return parse_tippuebersicht(self._get(f"{BASE}/{self.runde}/tippuebersicht", spieltagIndex=index))
+
     def submit(self, index: int | None, tips: dict[str, tuple[int, int]]) -> Matchday:
         """Tipps abgeben. tips: Spiel-Schlüssel -> (heim, gast). Gibt den Spieltag nach dem Speichern zurück."""
         md = self.matchday(index)
@@ -364,3 +371,123 @@ class KicktippClient:
         if wrong:
             raise KicktippError(f"Kicktipp hat folgende Tipps nicht übernommen: {', '.join(wrong)}")
         return after
+
+
+# ---- Tippübersicht (Tipps aller Mitspieler, sichtbar nach Ablauf der Tippzeit) ----------------
+@dataclass
+class HistMatch:
+    key: str  # tippspielId, gleiche Nummer wie spieltippForms[...] in der Tippabgabe
+    home: str
+    away: str
+    kickoff: datetime | None
+    result: tuple[int, int] | None  # Endergebnis, None solange nicht abgepfiffen
+    round_quote: tuple[int, int, int] | None  # endgültige Rundenquote Heim-Remis-Gast
+
+
+@dataclass
+class MemberTips:
+    member_id: str
+    name: str
+    tips: list[tuple[int, int] | None]  # je Spiel in der Reihenfolge von matches
+    points: list[int | None]
+    total: int | None
+    matchday_points: int | None = None
+
+
+@dataclass
+class Overview:
+    index: int | None
+    matches: list[HistMatch]
+    members: list[MemberTips]
+
+
+_TIP_RE = re.compile(r"^(\d+)\s*:\s*(\d+)$")
+
+
+def parse_tippuebersicht(html: str) -> Overview:
+    soup = BeautifulSoup(html, "html.parser")
+    plan = soup.find("table", id="spielplanSpiele")
+    ranking = soup.find("table", id="ranking")
+    if not isinstance(plan, Tag) or not isinstance(ranking, Tag):
+        raise KicktippError("Tippübersicht nicht erkannt (Spielplan oder Rangliste fehlt).")
+
+    columns = _column_map(plan)
+    if "ergebnis" not in columns:
+        columns.update({"ergebnis": 3, "punkteregel": 4})
+    header = next((r for r in plan.find_all("tr") if r.find("th")), None)
+    if header is not None:
+        for idx, th in enumerate(header.find_all(["th", "td"], recursive=False)):
+            label = f"{th.get('name', '')} {th.get_text(' ', strip=True)}".lower()
+            if "ergebnis" in label:
+                columns["ergebnis"] = idx
+            elif "punkteregel" in label:
+                columns["punkteregel"] = idx
+
+    matches: list[HistMatch] = []
+    index = None
+    last_kickoff = None
+    body = plan.find("tbody") or plan
+    for row in body.find_all("tr"):
+        tds = row.find_all("td", recursive=False)
+        if len(tds) < 3:
+            continue
+        home_td = _cell(row, tds, columns, "heim", "col1")
+        away_td = _cell(row, tds, columns, "gast", "col2")
+        if home_td is None or away_td is None:
+            continue
+        url = row.get("data-url", "") or ""
+        km = re.search(r"tippspielId=(\d+)", url)
+        im = re.search(r"spieltagIndex=(\d+)", url)
+        if im:
+            index = int(im.group(1))
+        time_td = _cell(row, tds, columns, "termin", "col0")
+        last_kickoff = _parse_kickoff(time_td.get_text(" ", strip=True) if time_td else "", last_kickoff)
+        result = None
+        res_td = tds[columns["ergebnis"]] if columns["ergebnis"] < len(tds) else None
+        if isinstance(res_td, Tag):
+            final = res_td.select_one(".kicktipp-abpfiff") or res_td
+            h, a = final.select_one(".kicktipp-heim"), final.select_one(".kicktipp-gast")
+            if h and a and h.get_text(strip=True).isdigit() and a.get_text(strip=True).isdigit():
+                result = (int(h.get_text(strip=True)), int(a.get_text(strip=True)))
+        rq = None
+        rule_td = tds[columns["punkteregel"]] if columns["punkteregel"] < len(tds) else None
+        if isinstance(rule_td, Tag):
+            mq = _ROUND_QUOTE_RE.search(rule_td.get_text(" ", strip=True))
+            rq = tuple(int(v) for v in mq.groups()) if mq else None
+        matches.append(
+            HistMatch(
+                key=km.group(1) if km else f"{index}:{len(matches)}",
+                home=home_td.get_text(" ", strip=True),
+                away=away_td.get_text(" ", strip=True),
+                kickoff=last_kickoff,
+                result=result,
+                round_quote=rq,  # type: ignore[arg-type]
+            )
+        )
+
+    members: list[MemberTips] = []
+    for row in (ranking.find("tbody") or ranking).find_all("tr"):
+        mid = row.get("data-teilnehmer-id")
+        name_el = row.select_one(".mg_name") or row.find("td", class_="name")
+        if not mid or name_el is None:
+            continue
+        tips: list[tuple[int, int] | None] = []
+        points: list[int | None] = []
+        for i in range(len(matches)):
+            td = row.find("td", class_=f"ereignis{i}")
+            if not isinstance(td, Tag):
+                tips.append(None)
+                points.append(None)
+                continue
+            sub = td.find("sub")
+            pts = int(sub.get_text(strip=True)) if sub and sub.get_text(strip=True).isdigit() else None
+            text = "".join(t for t in td.find_all(string=True, recursive=False)).strip()
+            m = _TIP_RE.match(text)
+            tips.append((int(m.group(1)), int(m.group(2))) if m else None)
+            points.append(pts if m else None)
+        total_el = row.find("td", class_="gesamtpunkte")
+        total = _int_or_none(total_el.get_text(strip=True)) if total_el else None
+        day_el = row.find("td", class_="spieltagspunkte")
+        day = _int_or_none(day_el.get_text(strip=True)) if day_el else None
+        members.append(MemberTips(mid, name_el.get_text(" ", strip=True), tips, points, total, day))
+    return Overview(index=index, matches=matches, members=members)
