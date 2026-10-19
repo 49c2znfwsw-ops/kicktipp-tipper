@@ -343,7 +343,18 @@ class KicktippClient:
         return md
 
     def tippuebersicht(self, index: int) -> "Overview":
-        return parse_tippuebersicht(self._get(f"{BASE}/{self.runde}/tippuebersicht", spieltagIndex=index))
+        url = f"{BASE}/{self.runde}/tippuebersicht"
+        html = self._get(url, spieltagIndex=index)
+        try:
+            ov = parse_tippuebersicht(html)
+        except KicktippError:
+            ov = None
+        if ov is None or not ov.matches or not ov.members:
+            dump = _save_debug([(url, 200, html)], "kicktipp-tippuebersicht-diagnose.html")
+            raise KicktippError(
+                "In der Tippübersicht wurden keine Tipps erkannt" + (f" – Seite gespeichert in {dump}." if dump else ".")
+            )
+        return ov
 
     def submit(self, index: int | None, tips: dict[str, tuple[int, int]]) -> Matchday:
         """Tipps abgeben. tips: Spiel-Schlüssel -> (heim, gast). Gibt den Spieltag nach dem Speichern zurück."""

@@ -7,3 +7,4 @@ config.toml
 .venv/
 kicktipp-login-diagnose.html
 kicktipp-tippabgabe-diagnose.html
+kicktipp-tippuebersicht-diagnose.html
