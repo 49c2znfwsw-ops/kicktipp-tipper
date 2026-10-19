@@ -292,6 +292,7 @@ async function load() {
   const data = await api("/api/state");
   state = data.state;
   window.appVersion = data.version;
+  if (data.neuere_version) notice(`Version ${data.neuere_version} ist verfügbar (läuft: ${data.version}). Zum Aktualisieren alle schwarzen Kicktipp-Tipper-Fenster schließen und die Startdatei neu starten.`, "ok");
   const r = data.regeln;
   const fmt = (o) => `${o.tendenz}/${o.tordifferenz}/${o.ergebnis}`;
   $("rules").textContent = (r.quote ? `Quotenregel ${r.quote.min}–${r.quote.max} + ` : "") + `Tendenz/Differenz/Ergebnis: Sieg ${fmt(r.heimsieg)} · Remis ${r.unentschieden.tendenz}/${r.unentschieden.ergebnis}`

@@ -82,12 +82,13 @@ def update() -> bool:
     if os.environ.get("KICKTIPP_KEIN_UPDATE"):
         return False
     try:
-        remote = parse_version(_fetch(VERSION_URL).decode("utf-8"))
+        # Zeitstempel umgeht den Zwischenspeicher von GitHub (sonst bis zu 5 Minuten alte Version)
+        remote = parse_version(_fetch(f"{VERSION_URL}?t={int(time.time())}").decode("utf-8"))
         local = local_version()
         if not remote or (local and remote <= local):
             return False
         print(f"Neue Version {'.'.join(map(str, remote))} gefunden, wird geladen ...")
-        changed = apply_update(_fetch(ZIP_URL, timeout=60), ROOT)
+        changed = apply_update(_fetch(f"{ZIP_URL}?t={int(time.time())}", timeout=60), ROOT)
         print(f"Update installiert ({len(changed)} Dateien).\n")
         return True
     except Exception as e:  # ohne Internet o. Ä. einfach mit der vorhandenen Version weiter

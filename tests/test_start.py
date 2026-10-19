@@ -69,3 +69,12 @@ def test_take_over_running(monkeypatch):
     monkeypatch.setattr(start, "running_version", lambda: next(answers))
     monkeypatch.setattr(start._local, "open", lambda *a, **k: None)
     assert start.take_over_running() is False
+
+
+def test_newer_version_notice(monkeypatch):
+    from kicktipp_tipper import updatecheck
+
+    monkeypatch.setattr(updatecheck, "_cache", {"at": 1e18, "version": "99.0.0"})
+    assert updatecheck.newer_version() == "99.0.0"
+    monkeypatch.setattr(updatecheck, "_cache", {"at": 1e18, "version": "0.0.1"})
+    assert updatecheck.newer_version() is None

@@ -16,6 +16,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, Field
 
 from . import __version__
+from .updatecheck import newer_version
 from .engine import Engine
 
 STATIC = Path(__file__).parent / "static"
@@ -70,7 +71,8 @@ def create_app(engine: Engine, background: bool = True) -> FastAPI:
 
     @app.get("/", dependencies=[Depends(auth)])
     def index():
-        return FileResponse(STATIC / "index.html")
+        # nie aus dem Browser-Zwischenspeicher: sonst sieht man nach einem Update die alte Oberfläche
+        return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-store"})
 
     @app.get("/api/version")
     def version():
@@ -98,6 +100,7 @@ def create_app(engine: Engine, background: bool = True) -> FastAPI:
             ),
             "aktualisieren_minuten": engine.cfg.aktualisieren_minuten,
             "version": __version__,
+            "neuere_version": newer_version(),
         }
 
     @app.post("/api/refresh", dependencies=[Depends(auth)])
