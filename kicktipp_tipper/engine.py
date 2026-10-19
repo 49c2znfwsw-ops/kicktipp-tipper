@@ -19,6 +19,8 @@ from .sources.kicktipp import KicktippClient, KicktippError, KicktippMatch, Matc
 from .store import Store
 from .teams import best_match
 
+import numpy as np
+
 log = logging.getLogger(__name__)
 
 RATINGS_TTL = timedelta(hours=6)
@@ -205,7 +207,7 @@ class Engine:
             "gast": round(pa, 3),
             "top_ergebnisse": _top_scores(probs, 5),
         }
-        rec.lambdas = [round(lam[0], 2), round(lam[1], 2)]
+        rec.lambdas = [round(lam[0], 6), round(lam[1], 6)]
         if current:
             rec.current_tip_points = round(
                 next(t.expected_points for t in ranked if [t.home, t.away] == current)
@@ -286,6 +288,114 @@ class Engine:
             self._history_at = datetime.now(timezone.utc)
             return {"geladen": fetched, "fehler": errors, "spieltage": sorted(self.store.loaded_spieltage())}
 
+    def _save_predictions(self, spieltag: int | None, recs: list[Recommendation]) -> None:
+        """Mitspieler-Prognose offener Spiele merken – der letzte Stand vor Anpfiff wird später abgeglichen."""
+        profiles = self.profiles()
+        if profiles is None or len(profiles.others()) < MIN_PROFILES:
+            return
+        per_member, crowd_fc = {}, {}
+        for r in recs:
+            if not r.open or not r.runde_basis:
+                continue
+            for mid in profiles.others():
+                per_member[(r.key, mid)] = [round(float(x), 4) for x in profiles.predict(mid, r.home, r.away, r.runde_basis)]
+            shares, n = profiles.crowd_forecast(r.home, r.away, r.runde_basis)
+            crowd_fc[r.key] = (list(shares), n)
+        self.store.save_predictions(spieltag, per_member, crowd_fc)
+
+    def abgleich(self, spieltag: int | None = None) -> dict:
+        """Prognose je Mitspieler gegen die tatsächlich abgegebenen Tipps eines vergangenen Spieltags.
+
+        Gespeicherte Prognosen (letzter Stand vor Anpfiff) haben Vorrang. Fehlen sie – etwa für Spieltage
+        vor Einführung dieser Funktion –, wird nachträglich gerechnet: Profile nur aus den Spieltagen davor,
+        als Ausgangslage die endgültige Rundenquote ohne den eigenen Tipp des Mitspielers.
+        """
+        history = self.store.history()
+        loaded = self.store.loaded_spieltage()
+        with_tips = sorted({t["spieltag"] for t in history["tips"]})
+        if not with_tips:
+            return {"spieltag": None, "spieltage": []}
+        if spieltag is None:
+            complete = [s for s in with_tips if loaded.get(s, {}).get("complete")]
+            spieltag = (complete or with_tips)[-1]
+        matches = [m for m in history["matches"] if m["spieltag"] == spieltag]
+        tips: dict[str, dict[str, tuple]] = {}
+        for t in history["tips"]:
+            if t["spieltag"] == spieltag:
+                tips.setdefault(t["match_key"], {})[t["member_id"]] = tuple(t["tip"])
+        stored, stored_crowd = self.store.predictions([m["key"] for m in matches])
+        prior = {
+            "matches": [m for m in history["matches"] if m["spieltag"] < spieltag],
+            "tips": [t for t in history["tips"] if t["spieltag"] < spieltag],
+            "members": [r for r in history["members"] if r["spieltag"] < spieltag],
+        }
+        backtest = Profiles(prior, self.me_id) if prior["tips"] else None
+        names = {r["member_id"]: r["name"] for r in history["members"] if r["spieltag"] == spieltag}
+        member_ids = [mid for mid in names if mid != self.me_id]
+        rule = self.cfg.rules.quote or crowd.QuoteRule()
+
+        spiele, cells = [], {mid: [] for mid in member_ids}
+        quellen = set()
+        hits = base_hits = judged = 0
+        p_actual = []
+        for m in matches:
+            actual = tips.get(m["key"], {})
+            counts = np.zeros(3)
+            for tip in actual.values():
+                counts[_tendency(tip)] += 1
+            fc = stored_crowd.get(m["key"])
+            spiele.append({
+                "key": m["key"], "home": m["home"], "away": m["away"], "ergebnis": m["result"],
+                "quote_ist": m["round_quote"], "tipper_ist": len(actual),
+                "quote_prognose": [int(rule.points(max(1, round(s * fc[1])), max(1, round(fc[1])))) for s in fc[0]] if fc else None,
+                "tipper_prognose": round(fc[1], 1) if fc else None,
+            })
+            for mid in member_ids:
+                tip = actual.get(mid)
+                pred = stored.get((m["key"], mid))
+                src = "gespeichert" if pred else None
+                if pred is None and backtest and mid in backtest.profiles and tip is not None:
+                    own = counts.copy()
+                    own[_tendency(tip)] -= 1
+                    if own.sum() > 0:
+                        pred = backtest.predict(mid, m["home"], m["away"], own / own.sum()).tolist()
+                        src = "nachträglich"
+                cell = {"p": [round(float(x), 3) for x in pred] if pred else None, "tipp": list(tip) if tip else None,
+                        "treffer": None, "mehrheit": None}
+                if pred and tip:
+                    t_idx = _tendency(tip)
+                    others = counts.copy()
+                    others[t_idx] -= 1
+                    cell["treffer"] = int(np.argmax(pred)) == t_idx
+                    cell["mehrheit"] = int(np.argmax(others)) == t_idx if others.sum() else None
+                    hits += cell["treffer"]
+                    base_hits += bool(cell["mehrheit"])
+                    judged += 1
+                    p_actual.append(pred[t_idx])
+                    quellen.add(src)
+                cells[mid].append(cell)
+
+        tipper = []
+        for mid in member_ids:
+            row = cells[mid]
+            j = [c for c in row if c["treffer"] is not None]
+            tipper.append({"member_id": mid, "name": names[mid], "zellen": row,
+                           "treffer": sum(c["treffer"] for c in j), "bewertet": len(j),
+                           "getippt": sum(1 for c in row if c["tipp"]),
+                           "teilnahme_prognose": backtest.profiles[mid].teilnahme if backtest and mid in backtest.profiles else None})
+        tipper.sort(key=lambda r: (-(r["treffer"] / r["bewertet"]) if r["bewertet"] else 1, r["name"]))
+        return {
+            "spieltag": spieltag, "spieltage": with_tips,
+            "quelle": "gemischt" if len(quellen) > 1 else (quellen.pop() if quellen else None),
+            "spiele": spiele, "tipper": tipper,
+            "zusammenfassung": {
+                "bewertet": judged,
+                "modell_treffer": hits / judged if judged else None,
+                "mehrheit_treffer": base_hits / judged if judged else None,
+                "p_tatsaechlich": float(np.mean(p_actual)) if p_actual else None,
+            },
+        }
+
     def history_due(self) -> bool:
         return self._history_at is None or datetime.now(timezone.utc) - self._history_at > HISTORY_TTL
 
@@ -345,6 +455,7 @@ class Engine:
             recs = [self.recommend(m, ratings, market, cm) for m in md.matches]
             self.apply_strategy_ban(recs)
             self._mark_changes(recs)
+            self._save_predictions(md.index, recs)
             self._learn_crowd(md, recs)
             ban = self.cfg.strategieverbot
             self.state = {

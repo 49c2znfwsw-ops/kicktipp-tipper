@@ -81,6 +81,14 @@ main { max-width: 980px; margin: 0 auto; padding: 16px; }
 .key { display: inline-block; width: 14px; height: 2px; border-radius: 1px; }
 .pick { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
 .pick button { padding: 3px 9px; font-size: 13px; border-radius: 999px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 10px 0 14px; }
+.tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.tile .v { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; } .tile .l { font-size: 12px; color: var(--muted); }
+.cell-hit { background: color-mix(in srgb, var(--ok) 18%, transparent); } .cell-miss { background: color-mix(in srgb, var(--err) 16%, transparent); }
+.step { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; margin-bottom: 12px; }
+.step h3 { margin: 0 0 6px; font-size: 15px; } .step p { margin: 6px 0; } .step table { width: auto; min-width: 0; }
+.step td, .step th { padding: 4px 10px 4px 0; } .num { font-variant-numeric: tabular-nums; text-align: right; }
+.formula { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; background: var(--chip); padding: 6px 10px; border-radius: 6px; display: inline-block; }
 .pick button.sel1 { border-color: var(--series-1); } .pick button.sel2 { border-color: var(--series-2); } .pick button.sel3 { border-color: var(--series-3); }
 .quote { font-variant-numeric: tabular-nums; }
 .status-ok { color: var(--ok); } .status-diff { color: var(--warn); } .status-none { color: var(--err); }
@@ -114,6 +122,7 @@ h2 { font-size: 15px; margin: 0 0 8px; }
     <button data-tab="tipps" class="on" role="tab">Tipps</button>
     <button data-tab="mitspieler" role="tab">Mitspieler</button>
     <button data-tab="verlauf" role="tab">Verlauf</button>
+    <button data-tab="erklaerung" role="tab">So funktioniert's</button>
   </nav>
 </header>
 <main>
@@ -140,10 +149,21 @@ h2 { font-size: 15px; margin: 0 0 8px; }
       <div class="scroll"><table class="ptable" id="progTable"></table></div>
     </section>
     <section>
+      <h2 id="abgTitle">Abgleich: Prognose und tatsächliche Tipps</h2>
+      <p class="sub" id="abgInfo"></p>
+      <div class="tiles" id="abgTiles"></div>
+      <div class="scroll"><table class="ptable" id="abgTable"></table></div>
+    </section>
+    <section>
       <h2>Profile</h2>
       <p class="sub">Tendenz: eigene Anteile Heim/Remis/Auswärts (oben) gegen die übrige Runde in denselben Spielen (unten). Mehrheit: wie oft mit der Mehrheit der Runde getippt.</p>
       <div class="scroll"><table class="ptable" id="profTable"></table></div>
     </section>
+  </div>
+
+  <div id="tab-erklaerung" class="tab">
+    <div class="toolbar"><label for="explSel">Durchrechnen für:</label><select id="explSel"></select></div>
+    <div id="expl"></div>
   </div>
 
   <div id="tab-verlauf" class="tab">
@@ -213,7 +233,7 @@ function render() {
       </div>
       <div class="meta"><span>${fmtTime(m.kickoff)}${m.open ? "" : " · geschlossen"}</span><span>${status}</span>
         ${p ? `<span>H ${(p.heim*100).toFixed(0)} % · U ${(p.remis*100).toFixed(0)} % · A ${(p.gast*100).toFixed(0)} %</span>` : ""}
-        ${m.lambdas ? `<span>xG ${m.lambdas[0]} : ${m.lambdas[1]}</span>` : ""}
+        ${m.lambdas ? `<span>xG ${m.lambdas[0].toFixed(2)} : ${m.lambdas[1].toFixed(2)}</span>` : ""}
         ${m.expected_quote ? `<span class="quote" title="Tendenzpunkte nach Quotenregel: aktuell bei Kicktipp angezeigt / erwartet bei Tippschluss, falls du so tippst">Rundenquote ${m.round_quote ? m.round_quote.join("-") : "–"} · erwartet ${m.expected_quote.map((x) => x.toFixed(1)).join("-")}</span>` : ""}</div>
       ${bar}
       ${change}
@@ -307,6 +327,7 @@ function showTab(name) {
   try { localStorage.setItem("tab", name); } catch (e) {}
   if (name === "mitspieler") loadMitspieler();
   if (name === "verlauf") loadVerlauf();
+  if (name === "erklaerung") loadErklaerung($("explSel").value || null);
 }
 document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
 
@@ -328,6 +349,7 @@ async function loadMitspieler() {
     return;
   }
   const names = Object.fromEntries(d.profile.map((p) => [p.member_id, p]));
+  loadAbgleich();
   // Prognose-Matrix
   const games = d.prognosen;
   const others = d.profile.filter((p) => !p.ich && p.teilnahme >= 0.2);
@@ -352,6 +374,92 @@ async function loadMitspieler() {
       <td>${p.typ.map((t) => `<span class="chip">${esc(t)}</span>`).join("")}</td>
       <td>${p.vereine.map((v) => `${esc(v.verein)} ${v.faktor >= 1 ? "↑" : "↓"}`).join(", ")}</td></tr>`).join("")}</tbody>`;
 }
+async function loadAbgleich(spieltag) {
+  let a;
+  try { a = await api("/api/abgleich" + (spieltag ? `?spieltag=${spieltag}` : "")); } catch (e) { return; }
+  if (!a.spieltag) { $("abgInfo").textContent = "Noch keine Tipp-Historie."; $("abgTiles").innerHTML = ""; $("abgTable").innerHTML = ""; return; }
+  $("abgTitle").textContent = `Abgleich: Prognose und tatsächliche Tipps – Spieltag ${a.spieltag}`;
+  const z = a.zusammenfassung;
+  $("abgInfo").innerHTML = !z.bewertet ? "Für diesen Spieltag gibt es keine Prognose (zu wenig frühere Spieltage)." :
+    (a.quelle === "gespeichert" ? "Verglichen wird die Prognose, die das Tool vor Anpfiff gespeichert hat." :
+     a.quelle === "nachträglich" ? "Für diesen Spieltag war noch keine Prognose gespeichert. Sie wurde <b>nachträglich berechnet</b>: Profile nur aus den Spieltagen davor, als Ausgangslage die endgültige Rundenquote ohne den eigenen Tipp. Ab jetzt speichert das Tool seine Prognose vor jedem Anpfiff." :
+     "Teils gespeicherte, teils nachträglich berechnete Prognosen.");
+  $("abgTiles").innerHTML = z.bewertet ? `
+    <div class="tile"><div class="v">${pct(z.modell_treffer)}</div><div class="l">Tendenz richtig vorhergesagt (${z.bewertet} Tipps)</div></div>
+    <div class="tile"><div class="v">${pct(z.mehrheit_treffer)}</div><div class="l">zum Vergleich: „tippt wie die Mehrheit“</div></div>
+    <div class="tile"><div class="v">${pct(z.p_tatsaechlich)}</div><div class="l">Ø Wahrscheinlichkeit, die die Prognose dem echten Tipp gab</div></div>` : "";
+  const g = a.spiele;
+  const qrow = g.some((m) => m.quote_prognose) ? `<tr><td class="sub">Rundenquote Prognose</td><td></td>${g.map((m) => `<td class="sub">${m.quote_prognose ? m.quote_prognose.join("-") : "–"}</td>`).join("")}</tr>` : "";
+  $("abgTable").innerHTML = `<thead><tr><th>Mitspieler</th><th>Treffer</th>${g.map((m) => `<th>${esc(m.home.slice(0, 10))}<br><span class="sub">${esc(m.away.slice(0, 10))}</span><br><span class="sub">${m.ergebnis ? m.ergebnis.join(":") : ""}</span></th>`).join("")}</tr></thead><tbody>
+    ${a.tipper.map((r) => `<tr><td>${esc(r.name)}</td><td>${r.bewertet ? `${r.treffer}/${r.bewertet}` : (r.getippt ? "–" : "nicht getippt")}</td>${r.zellen.map((c) => {
+      if (!c.tipp) return `<td class="sub">–</td>`;
+      if (!c.p) return `<td>${c.tipp.join(":")}</td>`;
+      const k = c.p.indexOf(Math.max(...c.p));
+      return `<td><span class="cellp ${c.treffer ? "cell-hit" : "cell-miss"}" title="Prognose: Heim ${pct(c.p[0])} · Remis ${pct(c.p[1])} · Ausw. ${pct(c.p[2])}">${c.tipp.join(":")} ${c.treffer ? "✓" : "✗"}</span><br><span class="sub">${TEND[k]} ${pct(c.p[k])}</span></td>`;
+    }).join("")}</tr>`).join("")}
+    <tr><td class="sub">Rundenquote Ist</td><td></td>${g.map((m) => `<td class="sub">${m.quote_ist ? m.quote_ist.join("-") : "–"}</td>`).join("")}</tr>${qrow}</tbody>`;
+}
+
+// ---- So funktioniert's ----------------------------------------------------------------
+const f1 = (x) => (Math.round(x * 10) / 10).toLocaleString("de-DE");
+const f2 = (x) => x.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const p0 = (x) => `${Math.round(x * 100)} %`;
+const p1 = (x) => `${(x * 100).toLocaleString("de-DE", { maximumFractionDigits: 1 })} %`;
+async function loadErklaerung(key) {
+  let x;
+  try { x = await api("/api/erklaerung" + (key ? `?key=${encodeURIComponent(key)}` : "")); } catch (e) { return notice(e.message, "err"); }
+  const sel = $("explSel");
+  sel.innerHTML = `<option value="">Beispielspiel</option>` + x.spiele_auswahl.map((m) => `<option value="${esc(m.key)}" ${m.key === key ? "selected" : ""}>${esc(m.name)}</option>`).join("");
+  sel.onchange = () => loadErklaerung(sel.value || null);
+  const sp = x.spiel, T = ["Heimsieg", "Remis", "Auswärtssieg"], r = x.regeln;
+  const q = x.schritt_quoten;
+  const step1 = q ? `<p>Ausgangspunkt sind die Wettquoten für ${esc(sp.home)} – ${esc(sp.away)}: <b>${q.quoten.map(f2).join(" / ")}</b>. Der Kehrwert einer Quote ist die Wahrscheinlichkeit, die der Buchmacher ansetzt:</p>
+      <p class="formula">1/${f2(q.quoten[0])} = ${p1(q.kehrwerte[0])} · 1/${f2(q.quoten[1])} = ${p1(q.kehrwerte[1])} · 1/${f2(q.quoten[2])} = ${p1(q.kehrwerte[2])} → Summe ${p1(q.summe)}</p>
+      <p>Die Summe liegt über 100 %. Die ${p1(q.marge)} darüber sind die Marge des Buchmachers. Teilt man jeden Wert durch die Summe, bleiben die eigentlichen Wahrscheinlichkeiten: <b>Heimsieg ${p0(q.wahrsch[0])}, Remis ${p0(q.wahrsch[1])}, Auswärtssieg ${p0(q.wahrsch[2])}</b>.</p>
+      <p class="sub">Bei echten Spielen kommen die Quoten von Kicktipp (bwin) oder der Odds API. Sie werden zu ${p0(x.gewicht_quoten)} mit einem eigenen Ergebnismodell aus den bisherigen Bundesliga-Ergebnissen gemischt.</p>`
+    : `<p>Für ${esc(sp.home)} – ${esc(sp.away)} stehen die Wahrscheinlichkeiten schon fest (Quellen: ${esc(sp.quellen.join(", "))}): <b>Heimsieg ${p0(x.wahrsch[0])}, Remis ${p0(x.wahrsch[1])}, Auswärtssieg ${p0(x.wahrsch[2])}</b>. Sie entstehen wie im Beispielspiel aus Wettquoten ohne Buchmachermarge, gemischt zu ${p0(x.gewicht_quoten)} mit dem Ergebnismodell.</p>`;
+  const top = x.top_ergebnisse;
+  const spieler = x.beispiel_spieler;
+  const fo = x.formel;
+  $("expl").innerHTML = `
+  <div class="notice">Alle Zahlen auf dieser Seite rechnet dieselbe Programmlogik, die auch die Empfehlungen erzeugt. ${sp.beispiel ? "Das Beispielspiel ist erfunden; oben kannst du ein echtes Spiel des aktuellen Spieltags wählen." : ""}</div>
+  <div class="step"><h3>1. Wettquoten → Wahrscheinlichkeiten</h3>${step1}</div>
+  <div class="step"><h3>2. Wahrscheinlichkeiten → erwartete Tore</h3>
+    <p>Fußballtore folgen recht gut einer <i>Poisson-Verteilung</i>. Das Tool sucht deshalb die zwei Torerwartungen, mit denen ein solches Modell genau die Wahrscheinlichkeiten aus Schritt 1 ergibt: <b>${esc(sp.home)} ${f2(x.xg[0])} Tore, ${esc(sp.away)} ${f2(x.xg[1])} Tore</b>.</p>
+    <p>Daraus folgt für jedes Ergebnis eine Wahrscheinlichkeit. Knappe Ergebnisse (0:0, 1:0, 0:1, 1:1) sind im echten Fußball etwas häufiger, als das reine Modell sagt. Das gleicht eine kleine Korrektur aus (Dixon-Coles).</p>
+    <table><thead><tr><th>Ergebnis</th>${top.map((t) => `<th class="num">${t.ergebnis}</th>`).join("")}</tr></thead>
+    <tbody><tr><td>Wahrscheinlichkeit</td>${top.map((t) => `<td class="num">${p1(t.p)}</td>`).join("")}</tr></tbody></table>
+    <p class="sub">Der wahrscheinlichste Einzeltipp ist nicht automatisch der beste: Wie viele Punkte ein Tipp bringt, hängt auch von den Regeln und der Rundenquote ab (Schritte 3 und 4).</p></div>
+  <div class="step"><h3>3. Rundenquote: Wie viele Punkte bringt eine richtige Tendenz?</h3>
+    <p>In eurer Runde gibt es für die richtige Tendenz ${r.quote.min} bis ${r.quote.max} Punkte, je nachdem, wie viele dieselbe Tendenz getippt haben:</p>
+    <p class="formula">Punkte = ${r.quote.max} / (10 × T/N) − ${r.quote.max}/10 + ${r.quote.min}, gerundet, zwischen ${r.quote.min} und ${r.quote.max}</p>
+    ${fo ? `<p>Beispiel: Tippen ${fo.t} von ${fo.n} Tippern Heimsieg, ergibt das ${f2(fo.roh)} → <b>${fo.punkte} Punkte</b>. Je mehr die Runde auf eine Tendenz setzt, desto weniger ist sie wert.</p>
+      <p>Die aktuelle Rundenquote <b>${x.rundenquote.join("-")}</b> verrät, wie die Runde gerade tippt. Rechnet man die Formel rückwärts, tippen etwa <b>${p0(x.basis[0])} Heimsieg, ${p0(x.basis[1])} Remis, ${p0(x.basis[2])} Auswärtssieg</b>.</p>` : `<p>Für dieses Spiel zeigt Kicktipp noch keine Rundenquote. Ausgangspunkt ist dann eine Schätzung aus den Wettquoten: ${p0(x.basis[0])} / ${p0(x.basis[1])} / ${p0(x.basis[2])}.</p>`}</div>
+  <div class="step"><h3>4. Wie werden die anderen noch tippen? (Mitspieler-Profile)</h3>
+    <p>Bis zum Anpfiff tippen noch weitere Mitspieler, und die Quote verschiebt sich. Deshalb hat jeder Mitspieler ein Profil aus seinen bisherigen Tipps. Darin steht vor allem, wie stark er der Mehrheit folgt („Mitläufer-Wert“ a) und ob er bestimmte Tendenzen bevorzugt (Vorliebe b):</p>
+    <p class="formula">Wahrscheinlichkeit(Tendenz) ∝ Anteil der Runde<sup>a</sup> × Vorliebe</p>
+    <p>An drei erfundenen Mitspielern, ausgehend vom Stand der Runde (${p0(x.basis[0])} / ${p0(x.basis[1])} / ${p0(x.basis[2])}):</p>
+    <table><thead><tr><th>Mitspieler</th><th class="num">a</th><th class="num">Heim</th><th class="num">Remis</th><th class="num">Ausw.</th></tr></thead>
+    <tbody>${spieler.map((s) => `<tr><td>${esc(s.name)}</td><td class="num">${f1(s.a)}</td>${s.p.map((v) => `<td class="num">${p0(v)}</td>`).join("")}</tr>`).join("")}</tbody></table>
+    <p>Anna folgt der Mehrheit stärker als der Schnitt, Ben weicht eher ab, und Cem tippt gern Remis. ${x.profile_genutzt
+      ? `Für eure Runde rechnet das Tool so für jeden Mitspieler, gewichtet nach seiner Teilnahme. Erwartet werden <b>${x.tipper} aktive Tipper</b>, mit den Anteilen <b>${p0(x.prognose_runde[0])} / ${p0(x.prognose_runde[1])} / ${p0(x.prognose_runde[2])}</b>.`
+      : `Für eure Runde fehlen noch Profile (Reiter „Mitspieler“ → Historie laden). Bis dahin nimmt das Tool an, dass Favoriten überproportional und Remis selten getippt werden: ${p0(x.prognose_runde[0])} / ${p0(x.prognose_runde[1])} / ${p0(x.prognose_runde[2])}.`}</p>
+    <p>${x.rundenquote ? `Die aktuell angezeigte Rundenquote zählt dabei zu ${p0(x.gewicht_rundenquote)}, die Prognose zu ${p0(1 - x.gewicht_rundenquote)}. ` : ""}Erwarteter Stand bei Tippschluss: <b>${p0(x.anteile_tippschluss[0])} / ${p0(x.anteile_tippschluss[1])} / ${p0(x.anteile_tippschluss[2])}</b>. Daraus folgen die erwarteten Punkte für eine richtige Tendenz, wenn du sie tippst (dein eigener Tipp zählt mit):
+    <b>Heimsieg ${f1(x.quote_erwartet[0])}, Remis ${f1(x.quote_erwartet[1])}, Auswärtssieg ${f1(x.quote_erwartet[2])}</b>.</p></div>
+  <div class="step"><h3>5. Erwartete Punkte je Tipp</h3>
+    <p>Für jeden möglichen Tipp von 0:0 bis 5:5 rechnet das Tool: Wie wahrscheinlich ist das exakte Ergebnis, wie wahrscheinlich nur die Tordifferenz, wie wahrscheinlich nur die Tendenz? Jeder Fall wird mit den Punkten nach euren Regeln gewichtet: Quotenpunkte + ${r.sieg.tendenz} (Tendenz) / ${r.sieg.tordifferenz} (Tordifferenz) / ${r.sieg.ergebnis} (Ergebnis), bei Remis + ${r.remis.tendenz} / ${r.remis.ergebnis}.</p>
+    <table><thead><tr><th>Tipp</th><th class="num">exakt</th><th class="num">nur Differenz</th><th class="num">nur Tendenz</th><th class="num">Quotenpkt.</th><th class="num">erwartete Punkte</th></tr></thead>
+    <tbody>${x.tipps.map((t) => `<tr${t.tipp === x.empfehlung ? ' style="font-weight:600"' : ""}><td>${t.tipp}</td>
+      <td class="num">${p1(t.p_ergebnis)} × ${f1(t.pkt_ergebnis)}</td><td class="num">${p1(t.p_differenz)} × ${f1(t.pkt_differenz)}</td>
+      <td class="num">${p1(t.p_tendenz)} × ${f1(t.pkt_tendenz)}</td><td class="num">${f1(t.quote)}</td><td class="num">${f2(t.erwartet)}</td></tr>`).join("")}</tbody></table>
+    <p>Beispiel für die erste Zeile: ${(() => { const t = x.tipps[0]; return `${p1(t.p_ergebnis)} × ${f1(t.pkt_ergebnis)} + ${p1(t.p_differenz)} × ${f1(t.pkt_differenz)} + ${p1(t.p_tendenz)} × ${f1(t.pkt_tendenz)} = <b>${f2(t.erwartet)} Punkte</b>`; })()}.
+    Bei Remis-Tipps zählt ein anderes Remis (z. B. 2:2 statt 1:1) wie eine richtige Tendenz.</p>
+    <p>Die Empfehlung ist der Tipp mit den meisten erwarteten Punkten: <b>${x.empfehlung}</b>. Ein Remis ist hier ${x.tipps.find((t) => t.tipp === "1:1") ? `trotz ${f1(x.tipps.find((t) => t.tipp === "1:1").quote)} Quotenpunkten` : ""} schwächer, weil es zu selten eintritt.</p></div>
+  <div class="step"><h3>6. Strategieverbot und ganzer Spieltag</h3>
+    ${x.strategieverbot ? `<p>Ab ${x.strategieverbot.ab} Spielen dürfen höchstens ${Math.abs(x.strategieverbot.anteil - 2 / 3) < 0.01 ? "2/3" : p0(x.strategieverbot.anteil)} der Tipps eines Spieltags dasselbe Ergebnis haben, bei 9 Spielen also ${x.strategieverbot.grenze}. 2:1 und 1:2 zählen dabei als gleich. Würde der beste Tipp diese Grenze überschreiten, wählt das Tool für die Spiele einen anderen Tipp, bei denen der Wechsel am wenigsten Punkte kostet. Diese Spiele sind auf dem Reiter „Tipps“ markiert.</p>` : "<p>In dieser Runde ist kein Strategieverbot eingestellt.</p>"}
+    <p>Das Ganze wiederholt das Tool alle 30 Minuten und kurz vor Anpfiff alle 5 Minuten, weil sich Wettquoten und Rundenquote laufend ändern. Ändert sich dadurch eine Empfehlung, wird das Spiel markiert.</p></div>`;
+}
+
 $("histLoad").onclick = async () => {
   $("histLoad").disabled = true; notice("Lade Tippübersichten aller Spieltage …");
   try {

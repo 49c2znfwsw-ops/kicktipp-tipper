@@ -33,6 +33,11 @@ class Store:
                     PRIMARY KEY (spieltag, member_id));
                 CREATE TABLE IF NOT EXISTS hist_loaded (
                     spieltag INTEGER PRIMARY KEY, loaded_at TEXT, complete INTEGER);
+                CREATE TABLE IF NOT EXISTS prognosen (
+                    match_key TEXT, member_id TEXT, spieltag INTEGER, probs TEXT, created_at TEXT,
+                    PRIMARY KEY (match_key, member_id));
+                CREATE TABLE IF NOT EXISTS prognose_runde (
+                    match_key TEXT PRIMARY KEY, spieltag INTEGER, shares TEXT, tipper REAL, created_at TEXT);
                 CREATE TABLE IF NOT EXISTS crowd_obs (
                     match_key TEXT PRIMARY KEY, created_at TEXT,
                     p_home REAL, p_draw REAL, p_away REAL, q_home INTEGER, q_draw INTEGER, q_away INTEGER);
@@ -156,3 +161,31 @@ class Store:
                 for st, mid, n, dp, tot in members
             ],
         }
+
+    # ---- Gespeicherte Mitspieler-Prognosen (letzter Stand vor Anpfiff) -------------------
+    def save_predictions(self, spieltag: int | None, per_member: dict, crowd: dict) -> None:
+        """per_member: {(match_key, member_id): probs}; crowd: {match_key: (shares, tipper)}"""
+        now = self._now()
+        with self._lock, self._db:
+            self._db.executemany(
+                "INSERT OR REPLACE INTO prognosen VALUES (?, ?, ?, ?, ?)",
+                [(k, mid, spieltag, json.dumps(p), now) for (k, mid), p in per_member.items()],
+            )
+            self._db.executemany(
+                "INSERT OR REPLACE INTO prognose_runde VALUES (?, ?, ?, ?, ?)",
+                [(k, spieltag, json.dumps(sh), n, now) for k, (sh, n) in crowd.items()],
+            )
+
+    def predictions(self, match_keys: list[str]) -> tuple[dict, dict]:
+        if not match_keys:
+            return {}, {}
+        marks = ",".join("?" * len(match_keys))
+        with self._lock:
+            rows = self._db.execute(
+                f"SELECT match_key, member_id, probs FROM prognosen WHERE match_key IN ({marks})", match_keys
+            ).fetchall()
+            crowd_rows = self._db.execute(
+                f"SELECT match_key, shares, tipper FROM prognose_runde WHERE match_key IN ({marks})", match_keys
+            ).fetchall()
+        return ({(k, mid): json.loads(p) for k, mid, p in rows},
+                {k: (json.loads(sh), n) for k, sh, n in crowd_rows})

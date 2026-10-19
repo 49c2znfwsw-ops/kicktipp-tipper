@@ -123,6 +123,16 @@ def create_app(engine: Engine, background: bool = True) -> FastAPI:
     def mitspieler():
         return engine.mitspieler()
 
+    @app.get("/api/abgleich", dependencies=[Depends(auth)])
+    def abgleich(spieltag: int | None = None):
+        return engine.abgleich(spieltag)
+
+    @app.get("/api/erklaerung", dependencies=[Depends(auth)])
+    def erklaerung(key: str | None = None):
+        from .explain import explain
+
+        return explain(engine, key)
+
     @app.get("/api/verlauf", dependencies=[Depends(auth)])
     def verlauf():
         return engine.verlauf()

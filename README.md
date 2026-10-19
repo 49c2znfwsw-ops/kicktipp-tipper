@@ -76,6 +76,12 @@ Nach Ablauf der Tippzeit zeigt Kicktipp allen Mitgliedern die Tipps der anderen 
 
 Daraus folgt eine **Prognose je Mitspieler und offenem Spiel**. Diese Prognosen ersetzen in den Empfehlungen die grobe Schätzung des Rundenverhaltens. Sie liefern außerdem die erwartete Zahl aktiver Tipper, denn für die Quote zählen nur abgegebene Tipps. Die Daten bleiben lokal in der Datenbank auf deinem Rechner.
 
+**Abgleich:** Für den letzten Spieltag stellt der Reiter die Prognose den tatsächlich abgegebenen Tipps gegenüber. Er zeigt die Trefferquote der Tendenz, zum Vergleich die Messlatte „tippt wie die Mehrheit“ und die erwartete gegen die echte Rundenquote. Das Tool speichert dafür vor jedem Anpfiff seine letzte Prognose. Für ältere Spieltage rechnet es nachträglich, mit Profilen nur aus den Spieltagen davor.
+
+### Reiter „So funktioniert's“
+
+Rechnet ein Beispielspiel oder ein echtes Spiel des Spieltags Schritt für Schritt durch: von den Wettquoten über die Ergebnis-Wahrscheinlichkeiten, die Rundenquote und die Mitspieler-Prognose bis zu den erwarteten Punkten je Tipp. Alle Zahlen stammen aus derselben Programmlogik wie die Empfehlungen.
+
 ### Reiter „Verlauf“
 
 Gesamtpunkte und Platzierung je Spieltag als Liniendiagramme. Du bist hervorgehoben, und bis zu zwei Mitspieler kannst du zum Vergleich anklicken. Fährst du mit der Maus über das Diagramm, siehst du die Werte. Darunter steht derselbe Verlauf als Tabelle.

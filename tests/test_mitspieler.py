@@ -113,3 +113,57 @@ def test_engine_history_profiles_and_verlauf(tmp_path, monkeypatch):
     client = TestClient(t.create_app(engine, background=False))
     assert client.get("/api/verlauf").json()["spieltage"] == [1, 2, 3, 4, 5, 6, 7]
     assert len(client.get("/api/mitspieler").json()["profile"]) == 25
+
+
+def test_abgleich_backtest_and_stored(tmp_path, monkeypatch):
+    monkeypatch.setattr(t, "FakeKicktipp", HistFake)
+    engine, _ = t.make_engine(tmp_path, rules=ScoringRules(quote=QuoteRule(3, 10)), anzahl_tipper=25)
+    engine.refresh()
+    engine.load_history(pause_s=0)
+    a = engine.abgleich()
+    assert a["spieltag"] == 7 and a["quelle"] == "nachträglich"
+    z = a["zusammenfassung"]
+    assert z["bewertet"] > 150 and 0 <= z["modell_treffer"] <= 1 and 0 <= z["mehrheit_treffer"] <= 1
+    assert len(a["tipper"]) == 24 and all(len(r["zellen"]) == 9 for r in a["tipper"])
+    assert engine.abgleich(1)["zusammenfassung"]["bewertet"] == 0  # keine früheren Spieltage
+
+    # Gespeicherte Prognose hat Vorrang vor der nachträglichen Berechnung
+    first = a["spiele"][0]["key"]
+    members = [r["member_id"] for r in a["tipper"]]
+    engine.store.save_predictions(7, {(first, mid): [1.0, 0.0, 0.0] for mid in members}, {first: ([0.7, 0.2, 0.1], 22.0)})
+    b = engine.abgleich(7)
+    assert b["quelle"] == "gemischt"
+    assert b["spiele"][0]["quote_prognose"] and b["spiele"][0]["tipper_prognose"] == 22.0
+    cell = next(r for r in b["tipper"] if r["zellen"][0]["tipp"])["zellen"][0]
+    assert cell["p"] == [1.0, 0.0, 0.0]
+
+
+def test_predictions_saved_on_refresh(tmp_path, monkeypatch):
+    monkeypatch.setattr(t, "FakeKicktipp", HistFake)
+    engine, _ = t.make_engine(tmp_path, rules=ScoringRules(quote=QuoteRule(3, 10)), anzahl_tipper=25)
+    engine.refresh()
+    engine.load_history(pause_s=0)
+    state = engine.refresh()
+    keys = [m["key"] for m in state["matches"] if m["open"]]
+    per_member, crowd = engine.store.predictions(keys)
+    assert len(crowd) == len(keys) and len(per_member) == len(keys) * 24
+
+
+def test_explanation_is_consistent_with_engine(tmp_path, monkeypatch):
+    from kicktipp_tipper.explain import explain
+
+    monkeypatch.setattr(t, "FakeKicktipp", HistFake)
+    engine, _ = t.make_engine(tmp_path, rules=ScoringRules(quote=QuoteRule(3, 10)), anzahl_tipper=25)
+    state = engine.refresh()
+    x = explain(engine)
+    q = x["schritt_quoten"]
+    assert sum(q["wahrsch"]) == pytest.approx(1) and q["marge"] > 0
+    best = x["tipps"][0]
+    assert best["tipp"] == x["empfehlung"]
+    assert best["erwartet"] == pytest.approx(max(tp["erwartet"] for tp in x["tipps"]))
+    assert best["p_ergebnis"] + best["p_differenz"] + best["p_tendenz"] < 1
+    # Echtes Spiel: Empfehlung der Erklärung = Empfehlung der Engine (ohne Strategieverbot)
+    m = state["matches"][0]
+    y = explain(engine, m["key"])
+    assert y["empfehlung"] == ":".join(map(str, m["tip_ohne_verbot"] or m["tip"]))
+    assert y["tipps"][0]["erwartet"] == pytest.approx(m["expected_points"] if not m["tip_ohne_verbot"] else y["tipps"][0]["erwartet"], abs=1e-3)
