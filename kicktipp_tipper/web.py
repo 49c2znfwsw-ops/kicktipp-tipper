@@ -35,6 +35,10 @@ class SeenRequest(BaseModel):
     keys: list[str] | None = None  # None = alle
 
 
+class SettingsRequest(BaseModel):
+    werte: dict[str, float] | None = None  # None = auf Standard zurücksetzen
+
+
 class HistoryRequest(BaseModel):
     alles: bool = False  # auch abgeschlossene Spieltage neu laden
 
@@ -118,6 +122,15 @@ def create_app(engine: Engine, background: bool = True) -> FastAPI:
     @app.post("/api/seen", dependencies=[Depends(auth)])
     def seen(req: SeenRequest):
         return engine.mark_seen(req.keys)
+
+    @app.get("/api/einstellungen", dependencies=[Depends(auth)])
+    def einstellungen():
+        return engine.settings()
+
+    @app.post("/api/einstellungen", dependencies=[Depends(auth)])
+    def einstellungen_setzen(req: SettingsRequest):
+        result = engine.update_settings(req.werte)
+        return {**result, "state": engine.state}
 
     @app.get("/api/mitspieler", dependencies=[Depends(auth)])
     def mitspieler():

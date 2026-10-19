@@ -25,6 +25,7 @@ log = logging.getLogger(__name__)
 
 RATINGS_TTL = timedelta(hours=6)
 HISTORY_TTL = timedelta(hours=6)
+SLIDERS = ("gewicht_quoten", "gewicht_rundenquote")  # in der Oberfläche einstellbar
 MIN_PROFILES = 5  # ab so vielen profilierten Mitspielern ersetzen die Profile das grobe Rundenmodell
 # So lange vor Anpfiff wird häufiger aktualisiert, weil sich die Rundenquote noch bewegt
 HOT_WINDOW = timedelta(hours=3)
@@ -85,6 +86,11 @@ class Engine:
         self.me_id: str | None = (self.state or {}).get("ich")
         self._profiles: Profiles | None = None
         self._history_at: datetime | None = None
+        self._last_md: Matchday | None = None
+        self._defaults = {k: getattr(cfg, k) for k in SLIDERS}
+        for k, v in store.settings().items():
+            if k in SLIDERS:
+                setattr(cfg, k, float(v))
 
     # ---- Quellen -----------------------------------------------------------------
     def ratings(self) -> model.TeamRatings | None:
@@ -443,12 +449,37 @@ class Engine:
                 s["platz"][i] = pos
         return {"spieltage": spieltage, "reihen": sorted(series.values(), key=lambda s: s["platz"][-1] or 999) if spieltage else []}
 
+    # ---- Einstellungen (Schieber) --------------------------------------------------
+    def settings(self) -> dict:
+        return {"werte": {k: getattr(self.cfg, k) for k in SLIDERS}, "standard": dict(self._defaults)}
+
+    def update_settings(self, values: dict | None) -> dict:
+        """values=None setzt auf die Werte aus config.toml zurück. Rechnet mit dem letzten Spieltag neu."""
+        with self._lock:
+            if values is None:
+                self.store.clear_settings()
+                values = dict(self._defaults)
+            else:
+                values = {k: min(1.0, max(0.0, float(v))) for k, v in values.items() if k in SLIDERS}
+                self.store.save_settings(values)
+            for k, v in values.items():
+                setattr(self.cfg, k, v)
+            if self._last_md is not None:
+                self._compute(self._last_md)
+                self.mark_seen()  # geänderte Einstellung ist keine "neue" Empfehlung
+            return self.settings()
+
     def refresh(self, index: int | None = None) -> dict:
         with self._lock:
             md = self.client.matchday(index)
             if md.tipper_id and md.tipper_id != self.me_id:
                 self.me_id = md.tipper_id
                 self._profiles = None
+            return self._compute(md)
+
+    def _compute(self, md: Matchday) -> dict:
+        with self._lock:
+            self._last_md = md
             ratings = self.ratings()
             market = self.market()
             cm = self.crowd_model()

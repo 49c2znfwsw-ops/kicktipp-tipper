@@ -38,6 +38,7 @@ class Store:
                     PRIMARY KEY (match_key, member_id));
                 CREATE TABLE IF NOT EXISTS prognose_runde (
                     match_key TEXT PRIMARY KEY, spieltag INTEGER, shares TEXT, tipper REAL, created_at TEXT);
+                CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
                 CREATE TABLE IF NOT EXISTS crowd_obs (
                     match_key TEXT PRIMARY KEY, created_at TEXT,
                     p_home REAL, p_draw REAL, p_away REAL, q_home INTEGER, q_draw INTEGER, q_away INTEGER);
@@ -189,3 +190,19 @@ class Store:
             ).fetchall()
         return ({(k, mid): json.loads(p) for k, mid, p in rows},
                 {k: (json.loads(sh), n) for k, sh, n in crowd_rows})
+
+    # ---- Einstellungen aus der Oberfläche (überschreiben config.toml) --------------------
+    def settings(self) -> dict:
+        with self._lock:
+            rows = self._db.execute("SELECT key, value FROM settings").fetchall()
+        return {k: json.loads(v) for k, v in rows}
+
+    def save_settings(self, values: dict) -> None:
+        with self._lock, self._db:
+            self._db.executemany(
+                "INSERT OR REPLACE INTO settings VALUES (?, ?)", [(k, json.dumps(v)) for k, v in values.items()]
+            )
+
+    def clear_settings(self) -> None:
+        with self._lock, self._db:
+            self._db.execute("DELETE FROM settings")

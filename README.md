@@ -61,6 +61,12 @@ kicktipp-tipper freigeben --nur-leere    # nur Spiele, die du noch nicht getippt
 
 In der Oberfläche sind die Spiele vorausgewählt, deren abgegebener Tipp von der Empfehlung abweicht. Du kannst Tipps überschreiben und Spiele an- oder abwählen. Ein Klick auf **„Auswahl freigeben“** gibt die Tipps nach einer Rückfrage ab. Anschließend lädt das Tool die Seite neu und prüft, ob Kicktipp jeden Tipp übernommen hat. Jede Freigabe landet im Protokoll.
 
+**Modell einstellen:** Oben auf dem Reiter „Tipps“ gibt es zwei Schieber:
+- Wettquoten gegen Ergebnismodell
+- angezeigte Rundenquote gegen Mitspieler-Prognose
+
+Die Empfehlungen rechnen sich beim Schieben sofort neu, ohne Kicktipp erneut abzufragen. Die Einstellung bleibt gespeichert, „Standard wiederherstellen“ setzt sie auf die Werte aus der `config.toml` zurück.
+
 **Geänderte Empfehlungen:** Ändert sich eine Empfehlung, nachdem du sie gesehen hast, etwa weil sich die Rundenquote oder die Wettquoten bewegt haben, wird das Spiel markiert. Die Markierung zeigt den vorherigen und den neuen Tipp sowie den Grund. Sie bleibt, bis du auf „Gesehen“ klickst oder den Tipp freigibst. Der Browser-Tab zeigt die Zahl der Änderungen, z. B. „(2) Kicktipp-Tipper“.
 
 ### Reiter „Mitspieler“

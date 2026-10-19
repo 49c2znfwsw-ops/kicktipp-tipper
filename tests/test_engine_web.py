@@ -189,3 +189,25 @@ def test_login_form_without_id_and_diagnosis(tmp_path, monkeypatch):
     with pytest.raises(KicktippError, match="nicht gefunden"):
         KicktippClient("r", "u", "p", session=Wall()).login()
     assert "Cookies akzeptieren" in (tmp_path / "kicktipp-login-diagnose.html").read_text(encoding="utf-8")
+
+
+def test_sliders_recompute_and_persist(tmp_path):
+    from kicktipp_tipper.crowd import QuoteRule
+    from kicktipp_tipper.scoring import ScoringRules
+
+    engine, session = make_engine(tmp_path, rules=ScoringRules(quote=QuoteRule(3, 10)))
+    client = TestClient(create_app(engine, background=False))
+    client.post("/api/refresh", json={})
+    gets_before = len(session.posts)
+    before = {m["key"]: m["probs"] for m in engine.state["matches"]}
+    r = client.post("/api/einstellungen", json={"werte": {"gewicht_quoten": 0.0, "gewicht_rundenquote": 1.5}}).json()
+    assert r["werte"] == {"gewicht_quoten": 0.0, "gewicht_rundenquote": 1.0}  # auf 0..1 begrenzt
+    after = {m["key"]: m["probs"] for m in r["state"]["matches"]}
+    assert after != before  # nur noch Ergebnismodell
+    assert len(session.posts) == gets_before  # kein neuer Abruf/Abgabe bei Kicktipp
+    assert not any(m["aenderung"] for m in r["state"]["matches"])
+    # Gespeichert: neue Engine mit derselben Datenbank übernimmt die Werte
+    engine2 = Engine(engine.cfg.__class__(runde="meine-runde", datenbank=engine.cfg.datenbank), engine.client, Store(engine.cfg.datenbank))
+    assert engine2.cfg.gewicht_quoten == 0.0
+    back = client.post("/api/einstellungen", json={"werte": None}).json()
+    assert back["werte"]["gewicht_quoten"] == 0.8

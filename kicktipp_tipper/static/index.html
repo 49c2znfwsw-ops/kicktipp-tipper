@@ -60,6 +60,12 @@ main { max-width: 980px; margin: 0 auto; padding: 16px; }
 .change b { color: var(--warn); }
 .change button { padding: 2px 10px; font-size: 13px; }
 #seenAll { display: none; border-color: var(--warn); color: var(--warn); }
+.sliders { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; }
+.sliders summary { font-weight: 600; font-size: 14px; }
+.srow { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(140px, 2fr) minmax(120px, 1fr); gap: 10px; align-items: center; margin-top: 10px; font-size: 13px; }
+.srow input[type=range] { width: 100%; accent-color: var(--accent); }
+.srow .r { text-align: right; } .srow b { font-variant-numeric: tabular-nums; }
+@media (max-width: 560px) { .srow { grid-template-columns: 1fr 1fr; } .srow input[type=range] { grid-column: 1 / 3; grid-row: 2; } }
 .tabs { max-width: 980px; margin: 0 auto; padding: 0 16px; display: flex; gap: 4px; }
 .tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 12px; color: var(--muted); }
 .tabs button.on { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
@@ -128,6 +134,22 @@ h2 { font-size: 15px; margin: 0 0 8px; }
 <main>
   <div id="notice"></div>
   <div id="tab-tipps" class="tab on">
+  <details class="sliders" id="sliders">
+    <summary>Modell einstellen <span class="sub" id="sliderSummary"></span></summary>
+    <div class="srow">
+      <span>Wettquoten <b id="sq1"></b></span>
+      <input type="range" id="s_quoten" min="0" max="100" step="5" aria-label="Gewicht Wettquoten gegen Ergebnismodell">
+      <span class="r">Ergebnismodell <b id="sq2"></b></span>
+    </div>
+    <p class="sub">Woraus die Wahrscheinlichkeiten entstehen: Wettquoten (Buchmacher) oder das eigene Modell aus den bisherigen Bundesliga-Ergebnissen. <span id="modelAvail"></span></p>
+    <div class="srow">
+      <span>Angezeigte Rundenquote <b id="sr1"></b></span>
+      <input type="range" id="s_runde" min="0" max="100" step="5" aria-label="Gewicht angezeigte Rundenquote gegen Mitspieler-Prognose">
+      <span class="r">Mitspieler-Prognose <b id="sr2"></b></span>
+    </div>
+    <p class="sub">Wie das Tool den Stand bei Tippschluss schätzt: so wie Kicktipp die Quote gerade anzeigt, oder wie die Mitspieler laut Profil noch tippen werden.</p>
+    <button id="sReset">Standard wiederherstellen</button> <span class="sub" id="sDefaults"></span>
+  </details>
   <div class="legend">
     <span><i style="background:var(--home)"></i>Heimsieg</span>
     <span><i style="background:var(--draw)"></i>Remis</span>
@@ -294,6 +316,45 @@ async function markSeen(keys) {
   catch (e) { notice(e.message, "err"); }
 }
 $("seenAll").onclick = () => markSeen(null);
+
+// ---- Schieber ---------------------------------------------------------------------------
+let sliderTimer = null, sliderDefaults = null;
+function showSliders(w) {
+  const q = Math.round(w.gewicht_quoten * 100), r = Math.round(w.gewicht_rundenquote * 100);
+  $("s_quoten").value = q; $("s_runde").value = r;
+  $("sq1").textContent = q + " %"; $("sq2").textContent = (100 - q) + " %";
+  $("sr1").textContent = r + " %"; $("sr2").textContent = (100 - r) + " %";
+  const changed = sliderDefaults && (Math.abs(w.gewicht_quoten - sliderDefaults.gewicht_quoten) > 0.001 || Math.abs(w.gewicht_rundenquote - sliderDefaults.gewicht_rundenquote) > 0.001);
+  if (state?.matches) {
+    const n = state.matches.length, k = state.matches.filter((m) => m.sources.some((x) => x.startsWith("Ergebnismodell"))).length;
+    $("modelAvail").textContent = k === n ? "" : k === 0 ? "Für die Spiele dieses Spieltags liegt kein Ergebnismodell vor – dieser Schieber wirkt derzeit nicht."
+      : `Ergebnismodell liegt für ${k} von ${n} Spielen vor; bei den übrigen wirkt dieser Schieber nicht.`;
+  }
+  $("sliderSummary").textContent = `· Quoten ${q} % / Modell ${100 - q} % · Rundenquote ${r} % / Prognose ${100 - r} %` + (changed ? " · angepasst" : "");
+}
+async function loadSliders() {
+  try {
+    const s = await api("/api/einstellungen");
+    sliderDefaults = s.standard;
+    $("sDefaults").textContent = `Standard: Quoten ${Math.round(s.standard.gewicht_quoten * 100)} %, Rundenquote ${Math.round(s.standard.gewicht_rundenquote * 100)} %`;
+    showSliders(s.werte);
+  } catch (e) {}
+}
+async function sendSliders(werte) {
+  try {
+    const r = await api("/api/einstellungen", { werte });
+    showSliders(r.werte);
+    if (r.state) { state = r.state; render(); }
+  } catch (e) { notice(e.message, "err"); }
+}
+["s_quoten", "s_runde"].forEach((id) => $(id).addEventListener("input", () => {
+  const w = { gewicht_quoten: $("s_quoten").value / 100, gewicht_rundenquote: $("s_runde").value / 100 };
+  showSliders(w);
+  clearTimeout(sliderTimer);
+  sliderTimer = setTimeout(() => sendSliders(w), 300);
+}));
+$("sReset").onclick = () => sendSliders(null);
+loadSliders();
 $("refresh").onclick = () => refresh(state?.spieltag ?? null);
 $("prev").onclick = () => state?.spieltag && refresh(state.spieltag - 1);
 $("next").onclick = () => refresh(state?.spieltag != null ? state.spieltag + 1 : null);
@@ -338,7 +399,32 @@ const TCOL = ["var(--home)", "var(--draw)", "var(--away)"];
 function miniBar(a) {
   return `<span class="mini">${a.map((x, i) => `<span style="width:${x * 100}%;background:${TCOL[i]}"></span>`).join("")}</span>`;
 }
+// Eigene Zeile über den Prognosen: aktueller Tipp, Empfehlung und wie viele voraussichtlich gleich tippen
+function myRow(games, others) {
+  const byKey = Object.fromEntries((state?.matches || []).map((m) => [m.key, m]));
+  const tend = (t) => t[0] > t[1] ? 0 : t[0] === t[1] ? 1 : 2;
+  return `<tr class="me"><td>Du</td><td></td>${games.map((g) => {
+    const m = byKey[g.key];
+    if (!m) return "<td>–</td>";
+    const cur = m.current_tip, rec = m.tip;
+    const shown = cur || rec;
+    let same = "";
+    if (shown) {
+      const k = tend(shown); let e = 0, w = 0;
+      others.forEach((p) => { const pr = g.tipper[p.member_id]; if (pr) { e += pr[k] * p.teilnahme; w += p.teilnahme; } });
+      same = `<br><span class="sub" title="Erwartete Zahl der Mitspieler mit derselben Tendenz wie dein Tipp">gleich: ≈${Math.round(e)} von ${Math.round(w)}</span>`;
+    }
+    const k = shown ? tend(shown) : null;
+    const tipCell = cur
+      ? `<span class="cellp" style="background:color-mix(in srgb, ${TCOL[k]} 35%, transparent)">${cur.join(":")}</span>`
+      : `<span class="sub">nicht getippt</span>`;
+    const recNote = rec && (!cur || cur.join(":") !== rec.join(":")) ? `<br><span class="sub">Empfehlung ${rec.join(":")}</span>` : "";
+    return `<td>${tipCell}${recNote}${same}</td>`;
+  }).join("")}</tr>`;
+}
+
 async function loadMitspieler() {
+  if (!state) { try { state = (await api("/api/state")).state; } catch (e) {} }
   let d;
   try { d = await api("/api/mitspieler"); } catch (e) { return notice(e.message, "err"); }
   $("histInfo").textContent = d.spieltage.length
@@ -354,7 +440,7 @@ async function loadMitspieler() {
   const games = d.prognosen;
   const others = d.profile.filter((p) => !p.ich && p.teilnahme >= 0.2);
   $("progTable").innerHTML = games.length ? `<thead><tr><th>Mitspieler</th><th>tippt zu</th>${games.map((g) => `<th title="${esc(g.home)} – ${esc(g.away)}">${esc(g.home.slice(0, 10))}<br><span class="sub">${esc(g.away.slice(0, 10))}</span></th>`).join("")}</tr></thead>
-    <tbody>${others.map((p) => `<tr><td>${esc(p.name)}</td><td>${pct(p.teilnahme)}</td>${games.map((g) => {
+    <tbody>${myRow(games, others)}${others.map((p) => `<tr><td>${esc(p.name)}</td><td>${pct(p.teilnahme)}</td>${games.map((g) => {
       const pr = g.tipper[p.member_id]; if (!pr) return "<td>–</td>";
       const k = pr.indexOf(Math.max(...pr));
       return `<td><span class="cellp" style="background:color-mix(in srgb, ${TCOL[k]} ${Math.round(pr[k] * 45)}%, transparent)" title="Heim ${pct(pr[0])} · Remis ${pct(pr[1])} · Ausw. ${pct(pr[2])}">${TEND[k]} ${pct(pr[k])}</span></td>`;
