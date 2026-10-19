@@ -6,13 +6,17 @@ die Standardbibliothek. Lokale Dateien (.env, config.toml, .venv, Datenbank) wer
 from __future__ import annotations
 
 import io
+import json
 import os
 import re
 import shutil
 import subprocess
 import sys
 import urllib.request
+import time
+import urllib.error
 import venv
+import webbrowser
 import zipfile
 from pathlib import Path
 
@@ -131,6 +135,48 @@ def ensure_config() -> None:
     print("config.toml angelegt.\n")
 
 
+PORT = 8000
+LOCAL = f"http://127.0.0.1:{PORT}"
+# Ohne Proxy: Anfragen an den eigenen Rechner sollen nie über einen Firmen-Proxy laufen
+_local = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def running_version() -> str | None:
+    """Version des bereits laufenden Programms; "alt" für Versionen ohne Versionsabfrage, None wenn keins läuft."""
+    try:
+        with _local.open(f"{LOCAL}/api/version", timeout=3) as r:
+            return json.loads(r.read().decode("utf-8")).get("version") or "alt"
+    except urllib.error.HTTPError:
+        return "alt"
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+
+
+def take_over_running() -> bool:
+    """Läuft schon ein Programm? Gleiche Version: nur Browser öffnen (True). Ältere Version: beenden."""
+    running = running_version()
+    mine = ".".join(map(str, local_version() or (0,)))
+    if running is None:
+        return False
+    if running == mine:
+        print(f"Kicktipp-Tipper läuft bereits ({LOCAL}) – öffne den Browser.")
+        webbrowser.open(LOCAL + "/")
+        return True
+    print(f"Eine ältere Version ({running}) läuft noch und wird beendet ...")
+    try:
+        _local.open(urllib.request.Request(f"{LOCAL}/api/beenden", data=b"", method="POST"), timeout=3)
+    except (urllib.error.URLError, OSError):
+        pass
+    for i in range(120):
+        if running_version() is None:
+            return False
+        if i == 5:
+            print("Bitte das andere schwarze Kicktipp-Tipper-Fenster schließen – ich warte so lange ...")
+        time.sleep(1)
+    print("Das alte Programm läuft immer noch. Bitte alle Kicktipp-Tipper-Fenster schließen und neu starten.")
+    raise SystemExit(1)
+
+
 def main() -> int:
     os.chdir(ROOT)
     if update():
@@ -142,6 +188,8 @@ def main() -> int:
         py = venv_python()
         if not (ROOT / ".env").exists():
             run(py, "-m", "kicktipp_tipper", "einrichten")
+        if take_over_running():
+            return 0
         run(py, "-m", "kicktipp_tipper", "serve", "--browser")
     except subprocess.CalledProcessError:
         print("\nEtwas ist schiefgegangen. Bitte einen Screenshot dieses Fensters schicken")

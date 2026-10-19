@@ -8,11 +8,14 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, status
+import os
+
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, Field
 
+from . import __version__
 from .engine import Engine
 
 STATIC = Path(__file__).parent / "static"
@@ -65,6 +68,19 @@ def create_app(engine: Engine, background: bool = True) -> FastAPI:
     def index():
         return FileResponse(STATIC / "index.html")
 
+    @app.get("/api/version")
+    def version():
+        return {"version": __version__}
+
+    @app.post("/api/beenden")
+    def beenden(request: Request):
+        """Beendet dieses Programm – damit eine neu gestartete Version übernehmen kann (nur vom eigenen Rechner)."""
+        if request.client is None or request.client.host not in ("127.0.0.1", "::1", "localhost", "testclient"):
+            raise HTTPException(403, "Nur vom eigenen Rechner erlaubt.")
+        stop.set()
+        threading.Timer(0.5, os._exit, [0]).start()
+        return {"ok": True}
+
     @app.get("/api/state", dependencies=[Depends(auth)])
     def state():
         return {
@@ -77,6 +93,7 @@ def create_app(engine: Engine, background: bool = True) -> FastAPI:
                 else None
             ),
             "aktualisieren_minuten": engine.cfg.aktualisieren_minuten,
+            "version": __version__,
         }
 
     @app.post("/api/refresh", dependencies=[Depends(auth)])

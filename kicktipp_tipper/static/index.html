@@ -173,6 +173,8 @@ function notice(msg, kind = "") {
 async function api(path, body) {
   const res = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
+  if (res.status === 404 && path.startsWith("/api/"))
+    throw new Error("Im Hintergrund läuft noch eine ältere Programmversion. Bitte alle schwarzen Kicktipp-Tipper-Fenster schließen und die Startdatei erneut doppelklicken.");
   if (!res.ok) throw new Error(data.detail || res.statusText);
   return data;
 }
@@ -183,7 +185,7 @@ function render() {
   $("md").textContent = `Spieltag ${state.spieltag ?? "–"}`;
   const q = state.quellen || {};
   const src = [q.rundenquote && "Rundenquote", q.odds_api && "Odds API", q.kicktipp_quoten && "Kicktipp-Wettquoten", q.ergebnismodell && "Ergebnismodell"].filter(Boolean).join(", ") || "keine Quelle";
-  $("updated").textContent = `Stand ${fmtTime(state.updated_at)} · Quellen: ${src}`;
+  $("updated").textContent = `Stand ${fmtTime(state.updated_at)} · Quellen: ${src}` + (window.appVersion ? ` · Version ${window.appVersion}` : "");
   const sv = state.strategieverbot || {};
   const bad = Object.entries(sv.verstoesse_aktuell || {});
   if (bad.length) notice(`Achtung Strategieverbot: höchstens ${sv.grenze} gleiche Ergebnisse, getippt ist ${bad.map(([k, v]) => `${k} ${v}×`).join(", ")}.`, "err");
@@ -247,6 +249,7 @@ async function loadLog() {
 async function load() {
   const data = await api("/api/state");
   state = data.state;
+  window.appVersion = data.version;
   const r = data.regeln;
   const fmt = (o) => `${o.tendenz}/${o.tordifferenz}/${o.ergebnis}`;
   $("rules").textContent = (r.quote ? `Quotenregel ${r.quote.min}–${r.quote.max} + ` : "") + `Tendenz/Differenz/Ergebnis: Sieg ${fmt(r.heimsieg)} · Remis ${r.unentschieden.tendenz}/${r.unentschieden.ergebnis}`

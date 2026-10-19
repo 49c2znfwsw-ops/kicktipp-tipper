@@ -41,3 +41,31 @@ def test_apply_update_keeps_local_files(tmp_path):
     assert (tmp_path / "kicktipp-tipper.sqlite").read_text() == "db"
     assert not (tmp_path / ".venv").exists()
     assert (tmp_path / "kicktipp_tipper" / "neu.py").read_text() == "print(1)"
+
+
+def test_version_endpoint_and_shutdown_guard(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    import test_engine_web as t
+    from kicktipp_tipper import __version__
+
+    engine, _ = t.make_engine(tmp_path)
+    client = TestClient(t.create_app(engine, background=False))
+    assert client.get("/api/version").json()["version"] == __version__ == ".".join(map(str, start.local_version()))
+    calls = []
+    monkeypatch.setattr("os._exit", lambda code: calls.append(code))
+    assert client.post("/api/beenden").json()["ok"]
+
+
+def test_take_over_running(monkeypatch):
+    opened = []
+    monkeypatch.setattr(start.webbrowser, "open", lambda url: opened.append(url))
+    monkeypatch.setattr(start, "running_version", lambda: None)
+    assert start.take_over_running() is False
+    monkeypatch.setattr(start, "running_version", lambda: ".".join(map(str, start.local_version())))
+    assert start.take_over_running() is True and opened
+    # Ältere Version: wird beendet, danach ist der Port frei
+    answers = iter(["0.2.0", None])
+    monkeypatch.setattr(start, "running_version", lambda: next(answers))
+    monkeypatch.setattr(start._local, "open", lambda *a, **k: None)
+    assert start.take_over_running() is False
