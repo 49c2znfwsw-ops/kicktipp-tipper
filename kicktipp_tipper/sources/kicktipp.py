@@ -403,6 +403,7 @@ class MemberTips:
     points: list[int | None]
     total: int | None
     matchday_points: int | None = None
+    abgegeben: list[bool] = field(default_factory=list)  # auch verdeckte Tipps ("-:-") vor Anpfiff
 
 
 @dataclass
@@ -484,12 +485,16 @@ def parse_tippuebersicht(html: str) -> Overview:
             continue
         tips: list[tuple[int, int] | None] = []
         points: list[int | None] = []
+        submitted: list[bool] = []
         for i in range(len(matches)):
             td = row.find("td", class_=f"ereignis{i}")
             if not isinstance(td, Tag):
                 tips.append(None)
                 points.append(None)
+                submitted.append(False)
                 continue
+            # Vor Anpfiff zeigt Kicktipp abgegebene Tipps verdeckt als "-:-"
+            submitted.append(bool(re.match(r"^(-\s*:\s*-|\d+\s*:\s*\d+)", td.get_text(strip=True))))
             sub = td.find("sub")
             pts = int(sub.get_text(strip=True)) if sub and sub.get_text(strip=True).isdigit() else None
             text = "".join(t for t in td.find_all(string=True, recursive=False)).strip()
@@ -500,5 +505,5 @@ def parse_tippuebersicht(html: str) -> Overview:
         total = _int_or_none(total_el.get_text(strip=True)) if total_el else None
         day_el = row.find("td", class_="spieltagspunkte")
         day = _int_or_none(day_el.get_text(strip=True)) if day_el else None
-        members.append(MemberTips(mid, name_el.get_text(" ", strip=True), tips, points, total, day))
+        members.append(MemberTips(mid, name_el.get_text(" ", strip=True), tips, points, total, day, submitted))
     return Overview(index=index, matches=matches, members=members)

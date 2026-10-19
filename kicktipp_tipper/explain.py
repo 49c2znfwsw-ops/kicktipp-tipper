@@ -96,6 +96,21 @@ def explain(engine, key: str | None = None) -> dict:
     my_t = None if not current else (0 if current[0] > current[1] else 1 if current[0] == current[1] else 2)
     others = crowd.others_shares(rule, rq, forecast, n, my_t, cfg.gewicht_rundenquote)
     q = crowd.expected_quote_points(rule, others, n)
+    exakt = None
+    submitted = engine._submitted.get(rec["key"]) if rec else None
+    if rec and submitted is not None and use_profiles and rq:
+        # Gleiche Rechnung wie die Engine: abgegebene Tipps exakt, nur Fehlende prognostiziert
+        from types import SimpleNamespace
+
+        holder = SimpleNamespace(runde_basis=None, erwartete_tipper=None)
+        match = SimpleNamespace(key=rec["key"], round_quote=rq, home=home, away=away, open=rec["open"])
+        q = engine._exact_quote(match, holder, profiles, submitted, current, model_shares, rule)
+        n = round(holder.erwartete_tipper)
+        others = tuple(holder.runde_basis)
+        quote_now = engine._submitted_quote.get(rec["key"]) or rq
+        exakt = {"abgegeben": len(submitted), "zaehlung": crowd.exact_counts(rule, quote_now, len(submitted), prior=model_shares).tolist()
+                 if crowd.exact_counts(rule, quote_now, len(submitted)) is not None else None,
+                 "erwartet": holder.erwartete_tipper}
     beispiel_spieler = [
         {"name": s["name"], "a": s["a"], "b": s["b"],
          "p": _probs(np.array(basis), s["a"], np.array(s["b"])).tolist()} for s in EXAMPLE_PLAYERS
@@ -132,6 +147,7 @@ def explain(engine, key: str | None = None) -> dict:
         "anteile_tippschluss": list(others),
         "tipper": n,
         "quote_erwartet": list(q),
+        "exakt": exakt,
         "regeln": {"quote": rule.__dict__, "sieg": cfg.rules.heimsieg.__dict__, "remis": cfg.rules.unentschieden.__dict__},
         "tipps": tips,
         "empfehlung": f"{ranked[0].home}:{ranked[0].away}",

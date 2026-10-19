@@ -105,3 +105,66 @@ def others_shares(
     mixed = weight_observed * s + (1 - weight_observed) * np.array(model_shares)
     mixed /= mixed.sum()
     return float(mixed[0]), float(mixed[1]), float(mixed[2])
+
+
+def exact_counts(
+    rule: QuoteRule, quote: tuple[int, int, int], n: int, prior: tuple[float, float, float] | None = None
+) -> np.ndarray | None:
+    """Tendenz-Zählung (H, U, A), die bei n abgegebenen Tipps genau diese Rundenquote ergibt.
+
+    Mit bekanntem n ist die Verteilung meist eindeutig. An den Grenzen (3 bzw. 10 Punkte) passen oft
+    mehrere; dann wird nach ihrer Wahrscheinlichkeit unter `prior` (erwartete Anteile) gewichtet gemittelt.
+    """
+    if n <= 0:
+        return None
+    hits = [
+        (h, d, n - h - d)
+        for h in range(n + 1)
+        for d in range(n + 1 - h)
+        if tuple(int(rule.points(x, n)) for x in (h, d, n - h - d)) == tuple(quote)
+    ]
+    if not hits:
+        return None
+    arr = np.array(hits, dtype=float)
+    if prior is None or len(hits) == 1:
+        return arr.mean(axis=0)
+    logp = np.log(np.maximum(np.asarray(prior, dtype=float), 1e-3))
+    log_fact = np.array([math.lgamma(k + 1) for k in range(n + 1)])
+    ll = np.array([-log_fact[int(h)] - log_fact[int(d)] - log_fact[int(a)] + h * logp[0] + d * logp[1] + a * logp[2]
+                   for h, d, a in arr])
+    w = np.exp(ll - ll.max())
+    return (arr * w[:, None]).sum(axis=0) / w.sum()
+
+
+def expected_quote_points_exact(
+    rule: QuoteRule, fixed: np.ndarray, remaining: list[tuple[float, np.ndarray]]
+) -> tuple[float, float, float]:
+    """Erwartete Tendenz-Punkte, falls ich Heim / Remis / Gast tippe.
+
+    fixed: bereits abgegebene Tipps der anderen je Tendenz (bekannt).
+    remaining: je noch fehlendem Mitspieler (Wahrscheinlichkeit, dass er tippt; Tendenz-Wahrscheinlichkeiten).
+    Rechnet exakt über alle Kombinationen (Poisson-Binomial, gemeinsam für "wie viele mit Tendenz t" und "wie viele insgesamt").
+    """
+    n_fixed = int(round(float(np.sum(fixed))))
+    m = len(remaining)
+    out = []
+    for t in range(3):
+        # dist[k, j]: k zusätzliche Tipps mit Tendenz t, j zusätzliche Tipps insgesamt
+        dist = np.zeros((m + 1, m + 1))
+        dist[0, 0] = 1.0
+        for p_tip, probs in remaining:
+            q = float(probs[t])
+            new = dist * (1 - p_tip)
+            new[1:, 1:] += dist[:-1, :-1] * p_tip * q
+            new[:, 1:] += dist[:, :-1] * p_tip * (1 - q)
+            dist = new
+        ev = 0.0
+        base_t = float(fixed[t])
+        for k in range(m + 1):
+            for j in range(k, m + 1):
+                w = dist[k, j]
+                if w > 1e-12:
+                    # +1: mein eigener Tipp zählt mit
+                    ev += w * rule.points(int(round(base_t)) + k + 1, n_fixed + j + 1)
+        out.append(ev)
+    return out[0], out[1], out[2]

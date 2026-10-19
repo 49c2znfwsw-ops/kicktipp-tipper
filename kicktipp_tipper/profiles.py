@@ -217,6 +217,9 @@ class Profiles:
                 lift[win] *= min(max(f, 0.5), 2.0) ** 0.5  # gedämpft: wenige Spiele je Verein
         return _probs(np.asarray(S, dtype=float), a, b, lift)
 
+    def participation(self, mid: str) -> float:
+        return float(self._params[mid][3])
+
     def others(self) -> list[str]:
         return [mid for mid in self.profiles if mid != self.me_id]
 

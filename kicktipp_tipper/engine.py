@@ -50,7 +50,9 @@ class Recommendation:
     # Quotenregel
     round_quote: list[int] | None = None  # aktuell bei Kicktipp angezeigt (Heim-Remis-Gast)
     expected_quote: list[float] | None = None  # erwartete Tendenzpunkte zum Tippschluss, falls ich so tippe
-    runde_basis: list[float] | None = None  # Tendenz-Anteile der Runde, auf denen die Mitspieler-Prognose aufsetzt
+    runde_basis: list[float] | None = None
+    abgegeben: int | None = None  # Tipps, die schon abgegeben sind (verdeckt "-:-"), inkl. meinem
+    mitspieler_gesamt: int | None = None  # Tendenz-Anteile der Runde, auf denen die Mitspieler-Prognose aufsetzt
     erwartete_tipper: float | None = None
     # Strategieverbot
     tip_ohne_verbot: list[int] | None = None
@@ -87,6 +89,8 @@ class Engine:
         self._profiles: Profiles | None = None
         self._history_at: datetime | None = None
         self._last_md: Matchday | None = None
+        self._submitted: dict[str, set[str]] = {}  # Spiel -> Mitspieler, die schon getippt haben
+        self._submitted_quote: dict[str, tuple] = {}  # Rundenquote zum selben Zeitpunkt wie die Zählung
         self._defaults = {k: getattr(cfg, k) for k in SLIDERS}
         for k, v in store.settings().items():
             if k in SLIDERS:
@@ -179,27 +183,37 @@ class Engine:
         rule = cfg.rules.quote
         if rule:
             model_shares = (crowd_model or cfg.crowd).shares(ph, pd, pa)
-            n_tippers = cfg.anzahl_tipper
             profiles = self.profiles()
-            if profiles and len(profiles.others()) >= MIN_PROFILES:
-                # Prognose je Mitspieler, aufgesetzt auf den aktuellen Stand der Runde (sonst Wettquoten-Modell)
-                basis = crowd.shares_from_quote(rule, m.round_quote) if m.round_quote else model_shares
-                model_shares, expected_n = profiles.crowd_forecast(m.home, m.away, basis)
-                n_tippers = max(2, round(expected_n))
-                rec.runde_basis = [round(x, 3) for x in basis]
-                rec.erwartete_tipper = round(expected_n, 1)
-                sources.append(f"Mitspieler-Profile (≈{expected_n:.0f} aktive Tipper)")
-            shares = crowd.others_shares(
-                rule,
-                m.round_quote,
-                model_shares,
-                n_tippers,
-                _tendency(current) if current else None,
-                cfg.gewicht_rundenquote if m.open else 1.0,
-            )
-            quote_points = crowd.expected_quote_points(rule, shares, n_tippers)
+            have_profiles = profiles is not None and len(profiles.others()) >= MIN_PROFILES
+            submitted = self._submitted.get(m.key)
+            if submitted is not None:
+                rec.abgegeben = len(submitted)
+                rec.mitspieler_gesamt = (len(profiles.others()) + 1) if profiles else None
+            if submitted is not None and have_profiles and m.round_quote:
+                quote_points = self._exact_quote(m, rec, profiles, submitted, current, model_shares, rule)
+                sources.append(f"Rundenquote exakt ({len(submitted)} Tipps abgegeben)")
+                sources.append(f"Mitspieler-Profile (≈{rec.erwartete_tipper:.0f} Tipper bis Anpfiff)")
+            else:
+                n_tippers = cfg.anzahl_tipper
+                if have_profiles:
+                    # Prognose je Mitspieler, aufgesetzt auf den aktuellen Stand der Runde (sonst Wettquoten-Modell)
+                    basis = crowd.shares_from_quote(rule, m.round_quote) if m.round_quote else model_shares
+                    model_shares, expected_n = profiles.crowd_forecast(m.home, m.away, basis)
+                    n_tippers = max(2, round(expected_n))
+                    rec.runde_basis = [round(x, 3) for x in basis]
+                    rec.erwartete_tipper = round(expected_n, 1)
+                    sources.append(f"Mitspieler-Profile (≈{expected_n:.0f} aktive Tipper)")
+                shares = crowd.others_shares(
+                    rule,
+                    m.round_quote,
+                    model_shares,
+                    n_tippers,
+                    _tendency(current) if current else None,
+                    cfg.gewicht_rundenquote if m.open else 1.0,
+                )
+                quote_points = crowd.expected_quote_points(rule, shares, n_tippers)
+                sources.append("Rundenquote (Kicktipp)" if m.round_quote else "Rundenquote geschätzt (noch nicht angezeigt)")
             rec.expected_quote = [round(q, 2) for q in quote_points]
-            sources.append("Rundenquote (Kicktipp)" if m.round_quote else "Rundenquote geschätzt (noch nicht angezeigt)")
 
         ranked = rank_tips(probs, cfg.rules, cfg.max_tore_tipp, quote_points)
         self._ranked[m.key] = ranked
@@ -222,6 +236,32 @@ class Engine:
                 3,
             )
         return rec
+
+    def _exact_quote(self, m, rec, profiles, submitted, current, model_shares, rule):
+        """Rundenquote mit bekannter Zahl abgegebener Tipps: Bestand exakt, nur Fehlende werden prognostiziert."""
+        n_now = len(submitted)
+        quote = self._submitted_quote.get(m.key) or m.round_quote
+        counts = crowd.exact_counts(rule, quote, n_now, prior=model_shares)
+        if counts is None:  # Quote passt zu keiner Verteilung (z. B. Stand dazwischen geändert): Näherung
+            counts = np.array(crowd.shares_from_quote(rule, quote)) * n_now
+        others = counts.copy()
+        if current and self.me_id in submitted:
+            others[_tendency(current)] = max(0.0, others[_tendency(current)] - 1)  # mein Tipp zählt nicht doppelt
+        now_shares = others / others.sum() if others.sum() > 0 else np.array(model_shares)
+        w = self.cfg.gewicht_rundenquote
+        remaining = []
+        if m.open:
+            for mid in profiles.others():
+                if mid in submitted:
+                    continue
+                pred = profiles.predict(mid, m.home, m.away, now_shares)
+                # Schieber: Fehlende tippen wie die, die schon getippt haben (links), oder wie ihr Profil (rechts)
+                remaining.append((profiles.participation(mid), w * now_shares + (1 - w) * pred))
+        rec.runde_basis = [round(float(x), 3) for x in now_shares]
+        if hasattr(rec, "round_quote"):
+            rec.round_quote = list(quote)  # die zur Zählung passende, aktuellere Quote anzeigen
+        rec.erwartete_tipper = round(float(others.sum()) + sum(p for p, _ in remaining) + 1, 1)
+        return crowd.expected_quote_points_exact(rule, others, remaining)
 
     @staticmethod
     def _find_market(m: KicktippMatch, market: list[oddsapi.MarketOdds]) -> oddsapi.MarketOdds | None:
@@ -421,6 +461,7 @@ class Engine:
             )
             prognosen.append({
                 "key": m["key"], "home": m["home"], "away": m["away"],
+                "abgegeben": sorted(self._submitted.get(m["key"], set())),
                 "tipper": {mid: [round(float(x), 3) for x in profiles.predict(mid, m["home"], m["away"], basis)]
                            for mid in profiles.others()},
             })
@@ -475,7 +516,27 @@ class Engine:
             if md.tipper_id and md.tipper_id != self.me_id:
                 self.me_id = md.tipper_id
                 self._profiles = None
+            self._submitted, self._submitted_quote = self._load_submitted(md)
             return self._compute(md)
+
+    def _load_submitted(self, md: Matchday) -> tuple[dict[str, set[str]], dict[str, tuple]]:
+        """Wer hat schon getippt? Die Tippübersicht zeigt abgegebene Tipps vor Anpfiff verdeckt als "-:-".
+
+        Die Rundenquote kommt aus derselben Seite, damit Anzahl und Quote zum selben Zeitpunkt gehören.
+        """
+        if md.index is None or not any(m.open for m in md.matches):
+            return {}, {}
+        try:
+            ov = self.client.tippuebersicht(md.index)
+        except Exception as e:
+            log.info("Abgegebene Tipps nicht ermittelbar: %s", e)
+            return {}, {}
+        submitted = {
+            hm.key: {mb.member_id for mb in ov.members if i < len(mb.abgegeben) and mb.abgegeben[i]}
+            for i, hm in enumerate(ov.matches)
+        }
+        quotes = {hm.key: hm.round_quote for hm in ov.matches if hm.round_quote}
+        return submitted, quotes
 
     def _compute(self, md: Matchday) -> dict:
         with self._lock:

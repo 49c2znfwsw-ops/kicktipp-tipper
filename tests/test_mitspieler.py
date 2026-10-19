@@ -167,3 +167,80 @@ def test_explanation_is_consistent_with_engine(tmp_path, monkeypatch):
     y = explain(engine, m["key"])
     assert y["empfehlung"] == ":".join(map(str, m["tip_ohne_verbot"] or m["tip"]))
     assert y["tipps"][0]["erwartet"] == pytest.approx(m["expected_points"] if not m["tip_ohne_verbot"] else y["tipps"][0]["erwartet"], abs=1e-3)
+
+
+class OpenFake(HistFake):
+    """Wie HistFake, aber für den laufenden Spieltag 7 die echte Tippübersicht mit verdeckten Tipps."""
+
+    def get(self, url, params=None, timeout=None):
+        if "tippuebersicht" in url and self.logged_in and (params or {}).get("spieltagIndex") == 7:
+            self.overview_calls.append(7)
+            return t.FakeResponse((FIX / "tippuebersicht_offen.html").read_text(encoding="utf-8"))
+        return super().get(url, params, timeout)
+
+
+def test_parse_submitted_hidden_tips():
+    ov = parse_tippuebersicht((FIX / "tippuebersicht_offen.html").read_text(encoding="utf-8"))
+    assert ov.index == 7 and ov.matches[0].key == "9000000608"
+    assert [sum(mb.abgegeben[i] for mb in ov.members) for i in range(9)] == [4] * 9
+    me = next(mb for mb in ov.members if mb.member_id == "1")
+    assert all(me.abgegeben) and me.tips == [None] * 9  # verdeckt
+
+
+def test_exact_counts_from_quote_and_submitted():
+    from kicktipp_tipper.crowd import exact_counts
+
+    rule = QuoteRule(3, 10)
+    ov = parse_tippuebersicht((FIX / "tippuebersicht_offen.html").read_text(encoding="utf-8"))
+    assert exact_counts(rule, ov.matches[0].round_quote, 4).tolist() == [3, 1, 0]
+    # Gegenprobe an Spieltag 6: aus Quote und Anzahl ergibt sich genau die tatsächliche Verteilung
+    ov6 = parse_tippuebersicht(OVERVIEW)
+    exact = 0
+    for i, m in enumerate(ov6.matches):
+        tips = [mb.tips[i] for mb in ov6.members if mb.tips[i]]
+        actual = [sum(a > b for a, b in tips), sum(a == b for a, b in tips), sum(a < b for a, b in tips)]
+        est = exact_counts(rule, m.round_quote, len(tips))
+        # meist eindeutig; an den Grenzen (3/10 Punkte) passen mehrere Verteilungen -> Mittelwert liegt nah dran
+        assert all(abs(e - a) <= 2 for e, a in zip(est, actual)), m.home
+        exact += est.tolist() == actual
+    assert exact >= 1  # mit vielen Tipps oft mehrdeutig, dann auf ±1–2 genau
+
+
+def test_engine_uses_submitted_tips(tmp_path, monkeypatch):
+    monkeypatch.setattr(t, "FakeKicktipp", OpenFake)
+    engine, _ = t.make_engine(tmp_path, rules=ScoringRules(quote=QuoteRule(3, 10)), anzahl_tipper=25)
+    engine.refresh()
+    engine.load_history(pause_s=0)
+    state = engine.refresh()
+    m = state["matches"][0]
+    assert m["abgegeben"] == 4 and m["mitspieler_gesamt"] == 25
+    assert any("Rundenquote exakt (4 Tipps abgegeben)" in s for s in m["sources"])
+    assert m["runde_basis"] == [0.75, 0.25, 0.0]  # 3/1/0 der anderen (eigener Tipp hier unbekannt)
+    assert 4 < m["erwartete_tipper"] < 25
+    ms = engine.mitspieler()
+    assert len(ms["prognosen"][0]["abgegeben"]) == 4
+
+
+def test_exact_counts_prior_breaks_ties():
+    from kicktipp_tipper.crowd import exact_counts
+
+    rule = QuoteRule(3, 10)
+    # 10-10-3 bei 22 Tipps: 0–2 Heim und 0–2 Remis möglich; ein Prior mit mehr Remis verschiebt die Schätzung
+    flat = exact_counts(rule, (10, 10, 3), 22)
+    drawish = exact_counts(rule, (10, 10, 3), 22, prior=(0.05, 0.25, 0.70))
+    assert flat.sum() == pytest.approx(22) and drawish.sum() == pytest.approx(22)
+    assert drawish[1] > flat[1]
+
+
+def test_explanation_matches_engine_with_submitted(tmp_path, monkeypatch):
+    from kicktipp_tipper.explain import explain
+
+    monkeypatch.setattr(t, "FakeKicktipp", OpenFake)
+    engine, _ = t.make_engine(tmp_path, rules=ScoringRules(quote=QuoteRule(3, 10)), anzahl_tipper=25)
+    engine.refresh()
+    engine.load_history(pause_s=0)
+    state = engine.refresh()
+    m = state["matches"][0]
+    x = explain(engine, m["key"])
+    assert x["exakt"]["abgegeben"] == 4 and x["exakt"]["zaehlung"] == [3.0, 1.0, 0.0]
+    assert [round(v, 2) for v in x["quote_erwartet"]] == m["expected_quote"]

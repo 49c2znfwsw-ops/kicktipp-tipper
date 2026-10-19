@@ -147,7 +147,7 @@ h2 { font-size: 15px; margin: 0 0 8px; }
       <input type="range" id="s_runde" min="0" max="100" step="5" aria-label="Gewicht angezeigte Rundenquote gegen Mitspieler-Prognose">
       <span class="r">Mitspieler-Prognose <b id="sr2"></b></span>
     </div>
-    <p class="sub">Wie das Tool den Stand bei Tippschluss schätzt: so wie Kicktipp die Quote gerade anzeigt, oder wie die Mitspieler laut Profil noch tippen werden.</p>
+    <p class="sub">Wie das Tool die noch fehlenden Tipps bis Tippschluss schätzt: so wie die bisher Abgegebenen (laut Rundenquote) oder wie die Mitspieler laut ihrem Profil tippen werden.</p>
     <button id="sReset">Standard wiederherstellen</button> <span class="sub" id="sDefaults"></span>
   </details>
   <div class="legend">
@@ -156,6 +156,7 @@ h2 { font-size: 15px; margin: 0 0 8px; }
     <span><i style="background:var(--away)"></i>Auswärtssieg</span>
     <span id="rules"></span>
   </div>
+  <div id="submittedInfo" class="sub" style="margin-bottom:8px"></div>
   <div id="matches"></div>
   <section>
     <h2>Freigabe-Protokoll</h2>
@@ -254,6 +255,7 @@ function render() {
         <input inputmode="numeric" class="a" value="${t[1]}" ${m.open ? "" : "disabled"} aria-label="Tore Gast">
       </div>
       <div class="meta"><span>${fmtTime(m.kickoff)}${m.open ? "" : " · geschlossen"}</span><span>${status}</span>
+        ${m.abgegeben != null ? `<span title="So viele Mitglieder haben für dieses Spiel schon getippt (inkl. dir)${m.erwartete_tipper ? `; erwartet bis Anpfiff ≈${Math.round(m.erwartete_tipper)}` : ""}">abgegeben: ${m.abgegeben}${m.mitspieler_gesamt ? ` von ${m.mitspieler_gesamt}` : ""}${m.erwartete_tipper && m.open ? ` · erwartet ≈${Math.round(m.erwartete_tipper)}` : ""}</span>` : ""}
         ${p ? `<span>H ${(p.heim*100).toFixed(0)} % · U ${(p.remis*100).toFixed(0)} % · A ${(p.gast*100).toFixed(0)} %</span>` : ""}
         ${m.lambdas ? `<span>xG ${m.lambdas[0].toFixed(2)} : ${m.lambdas[1].toFixed(2)}</span>` : ""}
         ${m.expected_quote ? `<span class="quote" title="Tendenzpunkte nach Quotenregel: aktuell bei Kicktipp angezeigt / erwartet bei Tippschluss, falls du so tippst">Rundenquote ${m.round_quote ? m.round_quote.join("-") : "–"} · erwartet ${m.expected_quote.map((x) => x.toFixed(1)).join("-")}</span>` : ""}</div>
@@ -265,6 +267,12 @@ function render() {
       </div>
     </div>`;
   }).join("");
+  const withCount = state.matches.filter((m) => m.abgegeben != null && m.open);
+  if (withCount.length) {
+    const lo = Math.min(...withCount.map((m) => m.abgegeben)), hi = Math.max(...withCount.map((m) => m.abgegeben));
+    const tot = withCount[0].mitspieler_gesamt;
+    $("submittedInfo").textContent = `Bereits abgegeben (offene Spiele): ${lo === hi ? lo : lo + "–" + hi}${tot ? ` von ${tot} Mitgliedern` : ""}, inkl. dir.`;
+  } else $("submittedInfo").textContent = "";
   dirty = false;
   document.querySelectorAll(".sel").forEach((cb) => cb.addEventListener("change", () => { dirty = true; }));
   const nChanged = state.matches.filter((m) => m.aenderung).length;
@@ -444,7 +452,8 @@ async function loadMitspieler() {
     <tbody>${myRow(games, others)}${others.map((p) => `<tr><td>${esc(p.name)}</td><td>${pct(p.teilnahme)}</td>${games.map((g) => {
       const pr = g.tipper[p.member_id]; if (!pr) return "<td>–</td>";
       const k = pr.indexOf(Math.max(...pr));
-      return `<td><span class="cellp" style="background:color-mix(in srgb, ${TCOL[k]} ${Math.round(pr[k] * 45)}%, transparent)" title="Heim ${pct(pr[0])} · Remis ${pct(pr[1])} · Ausw. ${pct(pr[2])}">${TEND[k]} ${pct(pr[k])}</span></td>`;
+      const done = (g.abgegeben || []).includes(p.member_id);
+      return `<td>${done ? '<span class="sub" title="hat schon getippt (Tipp noch verdeckt)">✓ </span>' : ""}<span class="cellp" style="background:color-mix(in srgb, ${TCOL[k]} ${Math.round(pr[k] * 45)}%, transparent)" title="Heim ${pct(pr[0])} · Remis ${pct(pr[1])} · Ausw. ${pct(pr[2])}">${TEND[k]} ${pct(pr[k])}</span></td>`;
     }).join("")}</tr>`).join("")}
     <tr><td><b>Runde erwartet</b></td><td></td>${games.map((g) => {
       let s = [0, 0, 0], w = 0;
@@ -531,7 +540,8 @@ async function loadErklaerung(key) {
     <p>Anna folgt der Mehrheit stärker als der Schnitt, Ben weicht eher ab, und Cem tippt gern Remis. ${x.profile_genutzt
       ? `Für eure Runde rechnet das Tool so für jeden Mitspieler, gewichtet nach seiner Teilnahme. Erwartet werden <b>${x.tipper} aktive Tipper</b>, mit den Anteilen <b>${p0(x.prognose_runde[0])} / ${p0(x.prognose_runde[1])} / ${p0(x.prognose_runde[2])}</b>.`
       : `Für eure Runde fehlen noch Profile (Reiter „Mitspieler“ → Historie laden). Bis dahin nimmt das Tool an, dass Favoriten überproportional und Remis selten getippt werden: ${p0(x.prognose_runde[0])} / ${p0(x.prognose_runde[1])} / ${p0(x.prognose_runde[2])}.`}</p>
-    <p>${x.rundenquote ? `Die aktuell angezeigte Rundenquote zählt dabei zu ${p0(x.gewicht_rundenquote)}, die Prognose zu ${p0(1 - x.gewicht_rundenquote)}. ` : ""}Erwarteter Stand bei Tippschluss: <b>${p0(x.anteile_tippschluss[0])} / ${p0(x.anteile_tippschluss[1])} / ${p0(x.anteile_tippschluss[2])}</b>. Daraus folgen die erwarteten Punkte für eine richtige Tendenz, wenn du sie tippst (dein eigener Tipp zählt mit):
+    ${x.exakt ? `<p><b>Für dieses Spiel weiß das Tool genauer Bescheid:</b> In der Tippübersicht sind ${x.exakt.abgegeben} Tipps als „-:-“ abgegeben. Zusammen mit der Rundenquote ergibt das ${x.exakt.zaehlung ? `<b>${x.exakt.zaehlung.map((v) => f1(v)).join(" / ")}</b> Tipps auf Heim / Remis / Auswärts` : "eine Schätzung der Verteilung"}. Diese Tipps stehen fest. Prognostiziert werden nur die Mitspieler, die noch nicht getippt haben, jeder mit seiner Teilnahme-Wahrscheinlichkeit. Erwartet werden insgesamt ≈${Math.round(x.exakt.erwartet)} Tipper.</p>` : ""}
+    <p>${x.exakt ? `Für die noch fehlenden Tipps zählt der Stand der bisher Abgegebenen zu ${p0(x.gewicht_rundenquote)}, das Profil zu ${p0(1 - x.gewicht_rundenquote)}. ` : x.rundenquote ? `Die aktuell angezeigte Rundenquote zählt dabei zu ${p0(x.gewicht_rundenquote)}, die Prognose zu ${p0(1 - x.gewicht_rundenquote)}. ` : ""}Erwarteter Stand bei Tippschluss: <b>${p0(x.anteile_tippschluss[0])} / ${p0(x.anteile_tippschluss[1])} / ${p0(x.anteile_tippschluss[2])}</b>. Daraus folgen die erwarteten Punkte für eine richtige Tendenz, wenn du sie tippst (dein eigener Tipp zählt mit):
     <b>Heimsieg ${f1(x.quote_erwartet[0])}, Remis ${f1(x.quote_erwartet[1])}, Auswärtssieg ${f1(x.quote_erwartet[2])}</b>.</p></div>
   <div class="step"><h3>5. Erwartete Punkte je Tipp</h3>
     <p>Für jeden möglichen Tipp von 0:0 bis 5:5 rechnet das Tool: Wie wahrscheinlich ist das exakte Ergebnis, wie wahrscheinlich nur die Tordifferenz, wie wahrscheinlich nur die Tendenz? Jeder Fall wird mit den Punkten nach euren Regeln gewichtet: Quotenpunkte + ${r.sieg.tendenz} (Tendenz) / ${r.sieg.tordifferenz} (Tordifferenz) / ${r.sieg.ergebnis} (Ergebnis), bei Remis + ${r.remis.tendenz} / ${r.remis.ergebnis}.</p>

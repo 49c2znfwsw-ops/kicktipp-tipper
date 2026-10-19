@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kicktipp-tipper"
-version = "0.4.2"
+version = "0.5.0"
 description = "Tipp-Empfehlungen für eine Kicktipp-Tipprunde aus Wettquoten und Ergebnisdaten, mit Freigabe per Web-Oberfläche"
 requires-python = ">=3.11"
 dependencies = [
