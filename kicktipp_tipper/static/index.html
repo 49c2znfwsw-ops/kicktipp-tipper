@@ -72,11 +72,18 @@ main { max-width: 980px; margin: 0 auto; padding: 16px; }
 .tab { display: none; } .tab.on { display: block; }
 .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .ptable { min-width: 760px; font-variant-numeric: tabular-nums; }
-.ptable td, .ptable th { white-space: nowrap; }
+.ptable td, .ptable th { white-space: nowrap; padding: 5px 6px 5px 0; }
+/* Breite Reiter: volle Fensterbreite */
+body.wide .bar, body.wide .tabs, body.wide main { max-width: none; }
+/* Platz und Name bleiben beim seitlichen Scrollen stehen */
+.sticky2 td:nth-child(1), .sticky2 th:nth-child(1) { position: sticky; left: 0; background: var(--bg); z-index: 1; min-width: 34px; }
+.sticky2 td:nth-child(2), .sticky2 th:nth-child(2) { position: sticky; left: 34px; background: var(--bg); z-index: 1; padding-right: 10px; }
+.ptable td.wrap { white-space: normal; min-width: 110px; max-width: 190px; }
+.sticky1 td:nth-child(1), .sticky1 th:nth-child(1) { position: sticky; left: 0; background: var(--bg); z-index: 1; padding-right: 10px; }
 .ptable tr.me td { font-weight: 600; }
 .mini { display: inline-flex; width: 90px; height: 8px; border-radius: 4px; overflow: hidden; background: var(--chip); vertical-align: middle; }
 .mini span { height: 100%; } .mini span + span { margin-left: 2px; }
-.cellp { display: inline-block; min-width: 54px; padding: 2px 6px; border-radius: 6px; text-align: center; font-size: 12px; }
+.cellp { display: inline-block; min-width: 50px; padding: 2px 5px; border-radius: 6px; text-align: center; font-size: 12px; }
 .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; font-size: 14px; }
 .chart { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 16px; }
 .chart h3 { font-size: 14px; margin: 0 0 6px; }
@@ -169,18 +176,18 @@ h2 { font-size: 15px; margin: 0 0 8px; }
     <section>
       <h2>Prognose für die offenen Spiele</h2>
       <p class="sub">Wahrscheinlichste Tendenz je Mitspieler, aus dessen bisherigem Tippverhalten und dem aktuellen Stand der Runde.</p>
-      <div class="scroll"><table class="ptable" id="progTable"></table></div>
+      <div class="scroll"><table class="ptable sticky2" id="progTable"></table></div>
     </section>
     <section>
       <h2 id="abgTitle">Abgleich: Prognose und tatsächliche Tipps</h2>
       <p class="sub" id="abgInfo"></p>
       <div class="tiles" id="abgTiles"></div>
-      <div class="scroll"><table class="ptable" id="abgTable"></table></div>
+      <div class="scroll"><table class="ptable sticky2" id="abgTable"></table></div>
     </section>
     <section>
       <h2>Profile</h2>
       <p class="sub">Tendenz: eigene Anteile Heim/Remis/Auswärts (oben) gegen die übrige Runde in denselben Spielen (unten). Mehrheit: wie oft mit der Mehrheit der Runde getippt.</p>
-      <div class="scroll"><table class="ptable" id="profTable"></table></div>
+      <div class="scroll"><table class="ptable sticky2" id="profTable"></table></div>
     </section>
   </div>
 
@@ -196,7 +203,7 @@ h2 { font-size: 15px; margin: 0 0 8px; }
     <div class="chart"><h3>Platzierung nach Spieltag</h3><div id="chartRank"></div></div>
     <section>
       <h2>Tabelle</h2>
-      <div class="scroll"><table class="ptable" id="verlaufTable"></table></div>
+      <div class="scroll"><table class="ptable sticky1" id="verlaufTable"></table></div>
     </section>
   </div>
 </main>
@@ -389,6 +396,7 @@ $("release").onclick = async () => {
 let currentTab = "tipps";
 function showTab(name) {
   currentTab = name;
+  document.body.classList.toggle("wide", name === "mitspieler" || name === "verlauf");
   document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("on", t.id === "tab-" + name));
   document.querySelector(".nav").style.display = name === "tipps" ? "" : "none";
@@ -462,14 +470,14 @@ async function loadMitspieler() {
       return `<td>${miniBar(s.map((x) => x / (w || 1)))}</td>`;
     }).join("")}</tr></tbody>` : `<tr><td class="sub">Keine offenen Spiele.</td></tr>`;
   // Profile
-  $("profTable").innerHTML = `<thead><tr><th>Platz</th><th>Name</th><th>Punkte</th><th>Pkt./Spiel</th><th>Tendenz</th><th>H/U/A</th><th>Mehrheit</th><th>Lieblingstipps</th><th>Ø Tore</th><th>Tendenz richtig</th><th>Exakt</th><th>tippt zu</th><th>Typ</th><th>Vereine</th></tr></thead>
+  $("profTable").innerHTML = `<thead><tr><th>Platz</th><th>Name</th><th>Punkte</th><th>Pkt./<br>Spiel</th><th>Tendenz</th><th>H/U/A</th><th>Mehrheit</th><th>Lieblingstipps</th><th>Ø Tore</th><th>Tendenz<br>richtig</th><th>Exakt</th><th>tippt<br>zu</th><th>Typ</th><th>Vereine</th></tr></thead>
     <tbody>${d.profile.map((p) => `<tr class="${p.ich ? "me" : ""}"><td>${p.platz ?? "–"}</td><td>${esc(p.name)}${p.ich ? " (du)" : ""}</td><td>${p.punkte ?? "–"}</td>
       <td>${p.punkte_je_spiel ?? "–"}</td><td>${p.spiele ? miniBar(p.anteile) + "<br>" + miniBar(p.anteile_runde) : "–"}</td>
       <td>${p.spiele ? p.anteile.map((x) => Math.round(x * 100)).join("/") : "–"}</td><td>${p.spiele ? pct(p.mehrheit) : "–"}</td>
-      <td>${p.lieblingsergebnisse.map((e) => `${e.ergebnis} (${pct(e.anteil)})`).join(", ") || "–"}</td><td>${p.spiele ? p.tore : "–"}</td>
+      <td class="wrap">${p.lieblingsergebnisse.map((e) => `${e.ergebnis} (${pct(e.anteil)})`).join(", ") || "–"}</td><td>${p.spiele ? p.tore : "–"}</td>
       <td>${pct(p.trefferquote)}</td><td>${pct(p.exakt)}</td><td>${pct(p.teilnahme)}</td>
-      <td>${p.typ.map((t) => `<span class="chip">${esc(t)}</span>`).join("")}</td>
-      <td>${p.vereine.map((v) => `${esc(v.verein)} ${v.faktor >= 1 ? "↑" : "↓"}`).join(", ")}</td></tr>`).join("")}</tbody>`;
+      <td class="wrap">${p.typ.map((t) => `<span class="chip">${esc(t)}</span>`).join("")}</td>
+      <td class="wrap">${p.vereine.map((v) => `${esc(v.verein)} ${v.faktor >= 1 ? "↑" : "↓"}`).join(", ")}</td></tr>`).join("")}</tbody>`;
 }
 async function loadAbgleich(spieltag) {
   let a;
