@@ -47,6 +47,7 @@ class Recommendation:
     probs: dict | None = None
     lambdas: list[float] | None = None
     sources: list[str] = field(default_factory=list)
+    wettquote: list[float] | None = None  # Buchmacher-Quote 1 / X / 2 von Kicktipp (für die Quotenbewegung)
     # Quotenregel
     round_quote: list[int] | None = None  # aktuell bei Kicktipp angezeigt (Heim-Remis-Gast)
     expected_quote: list[float] | None = None  # erwartete Tendenzpunkte zum Tippschluss, falls ich so tippe
@@ -164,6 +165,7 @@ class Engine:
             current_tip_points=None,
             sources=sources,
             round_quote=list(m.round_quote) if m.round_quote else None,
+            wettquote=list(m.odds) if m.odds else None,
         )
         if lam is None:
             return rec

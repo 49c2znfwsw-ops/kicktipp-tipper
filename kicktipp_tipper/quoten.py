@@ -5,7 +5,7 @@ der Reiter dient dazu, größere Abweichungen zu finden.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from statistics import median
 
 from .model import devig
@@ -13,6 +13,9 @@ from .sources import oddsapi
 from .teams import best_match
 
 ABWEICHUNG_PP = 0.05  # ab 5 Prozentpunkten wird eine Abweichung hervorgehoben
+LEICHT_PP = 0.025  # ab 2,5 Prozentpunkten leicht markiert
+BEWEGUNG_PP = 0.03  # ab 3 Prozentpunkten gilt eine Quotenbewegung als deutlich
+MAX_ABRUFE = 100  # so viele Odds-API-Abrufe bleiben für die Bewegung gespeichert
 
 
 def _probs(book: oddsapi.BookOdds) -> list[float] | None:
@@ -32,6 +35,7 @@ def compare(events: list[oddsapi.EventOdds], matches: list[dict]) -> list[dict]:
             None,
         )
         row = {"key": m["key"], "home": m["home"], "away": m["away"], "kickoff": m.get("kickoff"),
+               "empfehlung": m.get("tip"),
                "prognose": [m["probs"]["heim"], m["probs"]["remis"], m["probs"]["gast"]] if m.get("probs") else None,
                "gefunden": ev is not None}
         if ev:
@@ -65,18 +69,77 @@ def compare(events: list[oddsapi.EventOdds], matches: list[dict]) -> list[dict]:
     return rows
 
 
+def trend(points: list[tuple[str, list[float]]], quelle: str) -> dict | None:
+    """Bewegung der Wahrscheinlichkeiten H/U/A über die Zeit (älteste zuerst).
+
+    Gleichbleibende Stände werden zusammengefasst; verglichen wird der letzte Stand mit dem ersten
+    und mit dem Stand vor 24 Stunden.
+    """
+    if not points:
+        return None
+    kept: list[tuple[str, list[float]]] = []
+    for at, p in points:
+        if not kept or max(abs(a - b) for a, b in zip(p, kept[-1][1])) > 1e-4:
+            kept.append((at, p))
+    last_at, last = points[-1]
+    if kept[-1][0] != last_at:
+        kept.append((last_at, last))  # Linie bis zum letzten Stand weiterführen
+    t_last = datetime.fromisoformat(last_at)
+    ref = next((p for at, p in reversed(kept) if datetime.fromisoformat(at) <= t_last - timedelta(hours=24)), None)
+    first_at, first = kept[0]
+    gesamt = [last[i] - first[i] for i in range(3)]
+    tag = [last[i] - ref[i] for i in range(3)] if ref else None
+    changes = [at for (at, p), (_, q) in zip(kept[1:], kept) if max(abs(a - b) for a, b in zip(p, q)) > 1e-4]
+    return {
+        "quelle": quelle,
+        "seit": first_at,
+        "stand": last_at,
+        "aktuell": last,
+        "gesamt": gesamt,
+        "24h": tag,
+        "letzte_aenderung": changes[-1] if changes else None,
+        "deutlich": max(abs(d) for d in (tag or gesamt)) >= BEWEGUNG_PP,
+        "punkte": [[at, *[round(x, 4) for x in p]] for at, p in kept[-200:]],
+    }
+
+
+def kicktipp_trend(snaps: list[tuple[str, dict]]) -> dict | None:
+    """Bewegung der Kicktipp-Wettquote (bwin) aus den gespeicherten Ständen – kostet keine Abfrage.
+
+    Stände aus der Zeit, bevor die Wettquote mitgespeichert wurde, gehen über die Prognose ein.
+    """
+    snaps = sorted(snaps, key=lambda x: datetime.fromisoformat(x[0]))
+    odds = [(at, devig(m["wettquote"])) for at, m in snaps if m.get("wettquote") and all(m["wettquote"])]
+    if len(odds) >= 2:
+        return trend(odds, "Kicktipp-Wettquote (bwin)")
+    probs = [(at, [m["probs"]["heim"], m["probs"]["remis"], m["probs"]["gast"]]) for at, m in snaps if m.get("probs")]
+    return trend(probs, "Prognose") if probs else None
+
+
 def run(engine, fetch: bool) -> dict:
     key = engine.odds_api_key()
     saved = engine.store.settings().get("quoten_abruf")
+    history = engine.store.settings().get("quoten_verlauf") or []
+    state = engine.state or {}
+    matches = state.get("matches", [])
     if fetch:
         if not key:
             raise ValueError("Bitte zuerst den API-Schlüssel eintragen.")
         data, quota = oddsapi.fetch_raw(key, engine.cfg.odds_api_sport)
         saved = {"zeit": datetime.now(timezone.utc).isoformat(timespec="seconds"), "daten": data, "kontingent": quota}
-        engine.store.save_settings({"quoten_abruf": saved})
-    matches = (engine.state or {}).get("matches", [])
-    result = {"schluessel": bool(key), "abruf": None, "spiele": [], "schwelle": ABWEICHUNG_PP}
+        rows = compare(oddsapi.parse_detailed(data), matches)
+        history = (history + [{"zeit": saved["zeit"], "markt": {r["key"]: r["markt"] for r in rows if r.get("markt")}}])[-MAX_ABRUFE:]
+        engine.store.save_settings({"quoten_abruf": saved, "quoten_verlauf": history})
+    result = {"schluessel": bool(key), "abruf": None, "schwelle": ABWEICHUNG_PP, "leicht": LEICHT_PP, "bewegung": BEWEGUNG_PP}
+    events = []
     if saved:
         events = oddsapi.parse_detailed(saved["daten"])
-        result.update({"abruf": saved["zeit"], "kontingent": saved["kontingent"], "spiele": compare(events, matches)})
+        result.update({"abruf": saved["zeit"], "kontingent": saved["kontingent"]})
+    rows = compare(events, matches)
+    series = engine.store.match_series(state.get("spieltag"))
+    for r in rows:
+        r["trend_kicktipp"] = kicktipp_trend(series.get(r["key"], []))
+        markt = [(h["zeit"], h["markt"][r["key"]]) for h in history if h["markt"].get(r["key"])]
+        r["trend_markt"] = trend(markt, "Markt (Odds API)") if len(markt) >= 2 else None
+    result["spiele"] = rows
     return result

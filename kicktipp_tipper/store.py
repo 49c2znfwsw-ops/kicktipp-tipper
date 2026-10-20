@@ -63,6 +63,19 @@ class Store:
             row = self._db.execute("SELECT data FROM snapshots ORDER BY id DESC LIMIT 1").fetchone()
         return json.loads(row[0]) if row else None
 
+    def match_series(self, spieltag: int | None) -> dict[str, list[tuple[str, dict]]]:
+        """Je Spiel alle gespeicherten Stände (Zeitpunkt, Spiel-Daten) des Spieltags, älteste zuerst."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT created_at, data FROM snapshots WHERE spieltag IS ? ORDER BY id", (spieltag,)
+            ).fetchall()
+        out: dict[str, list[tuple[str, dict]]] = {}
+        for at, data in rows:
+            snap = json.loads(data)
+            for m in snap.get("matches", []):
+                out.setdefault(m["key"], []).append((snap.get("updated_at") or at, m))
+        return out
+
     def log_release(self, spieltag, key, home, away, tip_home, tip_away, mode, ok, message="") -> None:
         with self._lock, self._db:
             self._db.execute(

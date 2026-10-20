@@ -101,7 +101,9 @@ Für die Empfehlung wird die Rundenquote mit allen Tipps exakt nachgerechnet: de
 
 Wettquoten vieler Buchmacher über [The Odds API](https://the-odds-api.com) neben der eigenen Prognose. Der Reiter zeigt:
 - den Markt-Median
-- die Abweichung in Prozentpunkten, auffällige Spiele ab 5 Punkten markiert
+- die Abweichung in Prozentpunkten, farbig: blau, wenn die Prognose höher liegt als der Markt, orange, wenn der Markt höher liegt; je kräftiger, desto größer. Ein roter Rand markiert Spiele ab 5 Punkten Abweichung, ein gelber ab 2,5. Auf Wunsch lässt sich nach der Abweichung sortieren.
+- die Bewegung der Kicktipp-Wettquote (bwin) aus den laufenden Aktualisierungen: eine Minigrafik und die Veränderung in Prozentpunkten in den letzten 24 Stunden und seit Beginn des Spieltags. Grün heißt, die Tendenz der Empfehlung wird wahrscheinlicher, rot heißt, sie wird unwahrscheinlicher. Diese Anzeige kostet keine Abfrage.
+- die Bewegung des Markt-Medians zwischen den eigenen Abrufen (ab dem zweiten Abruf)
 - bwin
 - die Spanne der Buchmacher
 - die besten Quoten

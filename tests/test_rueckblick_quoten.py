@@ -112,3 +112,49 @@ def test_odds_only_on_click(tmp_path, monkeypatch):
     # Ergebnis bleibt gespeichert, ohne neuen Abruf
     again = client.post("/api/quoten", json={}).json()
     assert len(calls) == 1 and again["abruf"] == r["abruf"]
+
+
+def test_trend_movement():
+    from kicktipp_tipper.quoten import kicktipp_trend, trend
+
+    pts = [("2026-10-20T08:00:00+00:00", [0.50, 0.25, 0.25]),
+           ("2026-10-20T09:00:00+00:00", [0.50, 0.25, 0.25]),  # unverändert -> zusammengefasst
+           ("2026-10-21T07:00:00+00:00", [0.52, 0.25, 0.23]),
+           ("2026-10-21T12:00:00+00:00", [0.56, 0.24, 0.20])]
+    tr = trend(pts, "x")
+    assert len(tr["punkte"]) == 3
+    assert tr["gesamt"][0] == pytest.approx(0.06) and tr["deutlich"]
+    assert tr["24h"][0] == pytest.approx(0.06)  # Bezug: Stand von 09:00 am Vortag
+    assert tr["letzte_aenderung"] == "2026-10-21T12:00:00+00:00"
+    # Kicktipp-Wettquote hat Vorrang vor der Prognose
+    snaps = [("2026-10-20T08:00:00+00:00", {"wettquote": [2.0, 3.6, 3.6], "probs": {"heim": 0.4, "remis": 0.3, "gast": 0.3}}),
+             ("2026-10-20T10:00:00+00:00", {"wettquote": [1.8, 3.8, 4.2], "probs": {"heim": 0.4, "remis": 0.3, "gast": 0.3}})]
+    kt = kicktipp_trend(snaps)
+    assert kt["quelle"].startswith("Kicktipp") and kt["gesamt"][0] > 0.03
+    assert kicktipp_trend([(a, {"probs": m["probs"]}) for a, m in snaps])["quelle"] == "Prognose"
+
+
+def test_market_trend_between_fetches(tmp_path, monkeypatch):
+    import copy
+
+    data = [copy.deepcopy(ODDS)]
+
+    def fake_fetch(key, sport, session=None):
+        return data[-1], {"verbleibend": "498"}
+
+    monkeypatch.setattr(oddsapi, "fetch_raw", fake_fetch)
+    monkeypatch.setattr(t, "FakeKicktipp", tm.HistFake)
+    engine, _ = t.make_engine(tmp_path, rules=RULES, anzahl_tipper=25)
+    client = TestClient(t.create_app(engine, background=False))
+    engine.refresh()
+    engine.refresh()
+    client.post("/api/quoten", json={"schluessel": "k"})
+    r = client.post("/api/quoten", json={}).json()
+    assert r["spiele"] and r["spiele"][0]["trend_kicktipp"] is not None  # ohne Abruf, aus den Ständen
+    first = client.post("/api/quoten", json={"abrufen": True}).json()["spiele"][0]
+    assert first["trend_markt"] is None
+    moved = copy.deepcopy(ODDS)
+    moved[0]["bookmakers"][1]["markets"][0]["outcomes"][0]["price"] = 1.55
+    data.append(moved)
+    second = client.post("/api/quoten", json={"abrufen": True}).json()["spiele"][0]
+    assert second["trend_markt"]["gesamt"][0] > 0

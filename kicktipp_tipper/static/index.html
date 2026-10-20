@@ -78,6 +78,14 @@ main { max-width: 980px; margin: 0 auto; padding: 16px; }
 tr.clickrow { cursor: pointer; } tr.clickrow.sel td { background: var(--chip); }
 .pos { color: var(--ok); } .neg { color: var(--err); }
 .flag td { background: color-mix(in srgb, var(--warn) 12%, transparent); }
+#oddsTable tr.dev2 td:first-child { box-shadow: inset 4px 0 0 var(--err); } #oddsTable tr.dev1 td:first-child { box-shadow: inset 4px 0 0 var(--warn); }
+#oddsTable td:first-child { padding-left: 10px; }
+.dv { display: inline-block; min-width: 44px; text-align: center; border-radius: 6px; padding: 1px 5px; margin: 1px 2px 1px 0; }
+.dv.big { font-weight: 650; }
+.mv { font-weight: 600; } .mv.up { color: var(--ok); } .mv.down { color: var(--err); } .mv.flat { color: var(--muted); font-weight: 400; }
+.spark { vertical-align: middle; display: block; margin-bottom: 2px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; font-size: 13px; color: var(--muted); margin: 8px 0; }
+.legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 4px; }
 .keyrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .keyrow input { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); min-width: 260px; }
 .tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 12px; color: var(--muted); }
@@ -215,10 +223,12 @@ h2 { font-size: 15px; margin: 0 0 8px; }
   </div>
 
   <div id="tab-quoten" class="tab">
-    <p class="sub">Wettquoten vieler Buchmacher (The Odds API) neben der eigenen Prognose, um größere Abweichungen zu finden. Diese Quoten fließen <b>nicht</b> in die Empfehlungen ein und werden nur auf Klick abgerufen.</p>
+    <p class="sub">Wettquoten vieler Buchmacher (The Odds API) neben der eigenen Prognose, um größere Abweichungen zu finden. Diese Quoten fließen <b>nicht</b> in die Empfehlungen ein und werden nur auf Klick abgerufen. Die Bewegung der Kicktipp-Quote kommt aus den laufenden Aktualisierungen und kostet keine Abfrage.</p>
     <div class="keyrow"><input id="oddsKey" type="password" autocomplete="off" placeholder="API-Schlüssel von the-odds-api.com"><button id="oddsKeySave">Schlüssel speichern</button><span id="oddsKeyInfo" class="sub"></span></div>
     <div class="toolbar" style="margin-top:10px"><button id="oddsFetch" class="primary">Quoten abrufen</button><span id="oddsInfo" class="sub"></span>
-      <label class="sub"><input type="checkbox" id="oddsOnlyFlag"> nur auffällige Spiele</label></div>
+      <label class="sub"><input type="checkbox" id="oddsOnlyFlag"> nur auffällige Spiele</label>
+      <label class="sub"><input type="checkbox" id="oddsSort"> nach Abweichung sortieren</label></div>
+    <div class="legend" id="oddsLegend"></div>
     <div class="scroll"><table class="ptable" id="oddsTable"></table></div>
   </div>
 
@@ -625,23 +635,73 @@ async function loadQuoten(body) {
     : "Noch nicht abgerufen · ein Abruf kostet 2 von 500 Abfragen im Monat";
   renderQuoten();
 }
+const DEV_FULL = 0.10;  // ab 10 Prozentpunkten volle Farbe
+function devBadge(d, label) {
+  const v = Math.round(d * 100), a = Math.min(Math.abs(d) / DEV_FULL, 1);
+  const col = d > 0 ? "var(--series-1)" : "var(--series-2)";
+  const bg = Math.abs(v) >= 1 ? `background: color-mix(in srgb, ${col} ${Math.round(8 + a * 42)}%, transparent)` : "";
+  const t = d > 0 ? "Prognose höher als der Markt" : d < 0 ? "Markt höher als die Prognose" : "gleich";
+  return `<span class="dv${Math.abs(d) >= oddsData.schwelle ? " big" : ""}" style="${bg}" title="${label}: ${t}">${label} ${v > 0 ? "+" : ""}${v === 0 ? 0 : v}</span>`;
+}
+function maxDev(g) { return g.abweichung ? Math.max(...g.abweichung.map(Math.abs)) : 0; }
+function tendOf(tip) { return !tip ? null : tip[0] > tip[1] ? 0 : tip[0] === tip[1] ? 1 : 2; }
+function spark(tr) {
+  // Veränderung gegenüber dem ersten Stand (Prozentpunkte), Nulllinie in der Mitte
+  const pts = tr.punkte;
+  if (pts.length < 2) return "";
+  const W = 120, H = 30, t0 = Date.parse(pts[0][0]), t1 = Date.parse(pts[pts.length - 1][0]);
+  const d = (p, i) => p[i] - pts[0][i];
+  const span = Math.max(0.03, ...pts.flatMap((p) => [1, 2, 3].map((i) => Math.abs(d(p, i)))));
+  const x = (t) => ((Date.parse(t) - t0) / Math.max(t1 - t0, 1)) * (W - 4) + 2;
+  const y = (v) => H / 2 - (v / span) * (H / 2 - 2);
+  const line = (i, c) => `<polyline fill="none" stroke="var(${c})" stroke-width="1.6" stroke-linejoin="round" points="${pts.map((p) => `${x(p[0]).toFixed(1)},${y(d(p, i)).toFixed(1)}`).join(" ")}"/>`;
+  return `<svg class="spark" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Veränderung Heimsieg, Remis, Auswärtssieg seit ${fmtTime(tr.seit)}">
+    <line x1="2" x2="${W - 2}" y1="${H / 2}" y2="${H / 2}" stroke="var(--grid)"/>${line(2, "--draw")}${line(3, "--away")}${line(1, "--home")}</svg>`;
+}
+function moveCell(tr, tend) {
+  if (!tr) return `<span class="sub">noch keine Werte</span>`;
+  if (tr.punkte.length < 2 || !tr.letzte_aenderung) return `<span class="sub">unverändert seit ${fmtTime(tr.seit)}</span>`;
+  const T = ["H", "U", "A"];
+  const parts = (ds) => ds.map((d, i) => {
+    const v = Math.round(d * 100);
+    const cls = v === 0 ? "flat" : i === tend ? (v > 0 ? "up" : "down") : "flat";
+    return `<span class="mv ${cls}">${T[i]}&nbsp;${v > 0 ? "▲+" + v : v < 0 ? "▼" + v : "0"}</span>`;
+  }).join(" ");
+  const tip = `${tr.quelle} · Stand ${fmtTime(tr.stand)} · zuletzt bewegt ${fmtTime(tr.letzte_aenderung)}`;
+  return `<div title="${esc(tip)}">${spark(tr)}${tr["24h"] ? `<span class="sub">24 h</span> ${parts(tr["24h"])}<br>` : ""}<span class="sub">seit ${fmtTime(tr.seit).replace(/, \d\d:\d\d$/, "")}</span> ${parts(tr.gesamt)}</div>`;
+}
 function renderQuoten() {
+  $("oddsLegend").innerHTML = oddsData?.spiele.length ? `
+    <span><span class="sw" style="background: color-mix(in srgb, var(--series-1) 50%, transparent)"></span>Prognose höher als der Markt</span>
+    <span><span class="sw" style="background: color-mix(in srgb, var(--series-2) 50%, transparent)"></span>Markt höher als die Prognose</span>
+    <span>(je kräftiger, desto größer; fett ab ${Math.round(oddsData.schwelle * 100)} Punkten)</span>
+    <span><span class="sw" style="background: var(--err)"></span>Abweichung ab ${Math.round(oddsData.schwelle * 100)} Prozentpunkten</span>
+    <span><span class="sw" style="background: var(--warn)"></span>ab ${String(oddsData.leicht * 100).replace(".", ",")}</span>
+    <span>Bewegung: <span class="mv up">▲ grün</span> / <span class="mv down">▼ rot</span> = die Tendenz der Empfehlung wird wahrscheinlicher / unwahrscheinlicher</span>
+    <span>Linien = Veränderung seit Beginn: <span style="color: var(--home)">━ Heim</span> <span style="color: var(--draw)">━ Remis</span> <span style="color: var(--away)">━ Gast</span> (Mauszeiger darauf: Quelle und Zeitpunkt)</span>` : "";
   if (!oddsData?.spiele.length) { $("oddsTable").innerHTML = ""; return; }
   const only = $("oddsOnlyFlag").checked;
   const T = ["H", "U", "A"];
   const trip = (p) => p ? p.map((x) => p0(x)).join(" / ") : "–";
-  const rows = oddsData.spiele.filter((g) => !only || g.auffaellig);
-  $("oddsTable").innerHTML = `<thead><tr><th>Spiel</th><th>Anpfiff</th><th>Prognose H/U/A</th><th>Markt (Median)</th><th>Abweichung (Prozentpunkte)</th><th>bwin</th><th>Spanne der Buchmacher</th><th>beste Quoten</th><th>über 2,5 Tore</th></tr></thead><tbody>${rows.map((g) => {
-    if (!g.gefunden) return `<tr><td>${esc(g.home)} – ${esc(g.away)}</td><td>${fmtTime(g.kickoff)}</td><td>${trip(g.prognose)}</td><td colspan="6" class="sub">bei der Odds API nicht gefunden</td></tr>`;
-    const dev = g.abweichung ? g.abweichung.map((d, i) => { const v = Math.round(d * 100); return `${T[i]} ${v > 0 ? "+" : ""}${v === 0 ? 0 : v}`; }).join(" · ") : "–";
-    return `<tr class="${g.auffaellig ? "flag" : ""}"><td>${esc(g.home)} – ${esc(g.away)}<br><span class="sub">${g.buchmacher} Buchmacher</span></td><td>${fmtTime(g.kickoff)}</td>
-      <td>${trip(g.prognose)}</td><td>${trip(g.markt)}</td><td>${g.auffaellig ? "<b>" + dev + "</b>" : dev}</td><td>${trip(g.bwin)}</td>
+  let rows = oddsData.spiele.filter((g) => !only || g.auffaellig || g.trend_kicktipp?.deutlich || g.trend_markt?.deutlich);
+  if ($("oddsSort").checked) rows = [...rows].sort((a, b) => maxDev(b) - maxDev(a));
+  $("oddsTable").innerHTML = `<thead><tr><th>Spiel</th><th>Anpfiff</th><th>Empfehlung</th><th>Prognose H/U/A</th><th>Markt (Median)</th><th>Abweichung (Prozentpunkte)</th><th>Bewegung Kicktipp-Quote</th><th>Bewegung Markt (je Abruf)</th><th>bwin</th><th>Spanne der Buchmacher</th><th>beste Quoten</th><th>über 2,5 Tore</th></tr></thead><tbody>${rows.map((g) => {
+    const tend = tendOf(g.empfehlung);
+    const tip = g.empfehlung ? `${g.empfehlung.join(":")} <span class="sub">(${T[tend]})</span>` : "–";
+    const moves = `<td>${moveCell(g.trend_kicktipp, tend)}</td><td>${g.trend_markt ? moveCell(g.trend_markt, tend) : `<span class="sub">${oddsData.abruf ? "ab dem 2. Abruf" : "–"}</span>`}</td>`;
+    if (!g.gefunden) return `<tr><td>${esc(g.home)} – ${esc(g.away)}</td><td>${fmtTime(g.kickoff)}</td><td>${tip}</td><td>${trip(g.prognose)}</td>
+      <td colspan="2" class="sub">${oddsData.abruf ? "bei der Odds API nicht gefunden" : "Markt noch nicht abgerufen"}</td>${moves}<td colspan="4"></td></tr>`;
+    const md = maxDev(g), lvl = md >= oddsData.schwelle ? "dev2" : md >= oddsData.leicht ? "dev1" : "";
+    const dev = g.abweichung ? g.abweichung.map((d, i) => devBadge(d, T[i])).join("") : "–";
+    return `<tr class="${lvl}"><td>${esc(g.home)} – ${esc(g.away)}<br><span class="sub">${g.buchmacher} Buchmacher</span></td><td>${fmtTime(g.kickoff)}</td><td>${tip}</td>
+      <td>${trip(g.prognose)}</td><td>${trip(g.markt)}</td><td>${dev}</td>${moves}<td>${trip(g.bwin)}</td>
       <td>${g.spanne ? g.spanne.map((r, i) => `${T[i]} ${p0(r[0])}–${p0(r[1])}`).join("<br>") : "–"}</td>
       <td>${g.beste_quoten.map((b, i) => b && b.quote ? `${T[i]} ${num(b.quote, 2)} <span class="sub">${esc(b.buchmacher)}</span>` : "").join("<br>")}</td>
       <td>${g.ueber25 == null ? "–" : p0(g.ueber25)}</td></tr>`;
   }).join("")}</tbody>`;
 }
 $("oddsOnlyFlag").addEventListener("change", renderQuoten);
+$("oddsSort").addEventListener("change", renderQuoten);
 $("oddsKeySave").onclick = async () => { await loadQuoten({ schluessel: $("oddsKey").value }); $("oddsKey").value = ""; notice("Schlüssel gespeichert.", "ok"); };
 $("oddsFetch").onclick = async () => {
   if (!confirm("Quoten jetzt abrufen? Das kostet 2 der 500 kostenlosen Abfragen im Monat.")) return;
