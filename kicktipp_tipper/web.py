@@ -40,6 +40,11 @@ class SettingsRequest(BaseModel):
     werte: dict[str, float] | None = None  # None = auf Standard zurücksetzen
 
 
+class OddsRequest(BaseModel):
+    abrufen: bool = False
+    schluessel: str | None = None  # gesetzt = speichern ("" löscht)
+
+
 class HistoryRequest(BaseModel):
     alles: bool = False  # auch abgeschlossene Spieltage neu laden
 
@@ -161,6 +166,25 @@ def create_app(engine: Engine, background: bool = True) -> FastAPI:
         except Exception as e:
             raise HTTPException(502, f"Historie nicht geladen: {e}")
         return result
+
+    @app.get("/api/rueckblick", dependencies=[Depends(auth)])
+    def rueckblick():
+        from .rueckblick import rueckblick as rb
+
+        return rb(engine.store.history(), engine.store.recommendations(), engine.me_id, engine.cfg.rules)
+
+    @app.post("/api/quoten", dependencies=[Depends(auth)])
+    def quoten(req: OddsRequest):
+        from . import quoten as q
+
+        if req.schluessel is not None:
+            engine.set_odds_api_key(req.schluessel)
+        try:
+            return q.run(engine, req.abrufen)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        except Exception as e:
+            raise HTTPException(502, f"Quoten nicht abrufbar: {e}")
 
     @app.get("/api/releases", dependencies=[Depends(auth)])
     def releases():

@@ -39,6 +39,8 @@ class Store:
                 CREATE TABLE IF NOT EXISTS prognose_runde (
                     match_key TEXT PRIMARY KEY, spieltag INTEGER, shares TEXT, tipper REAL, created_at TEXT);
                 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
+                CREATE TABLE IF NOT EXISTS empfehlungen (
+                    match_key TEXT PRIMARY KEY, spieltag INTEGER, tip TEXT, ev REAL, created_at TEXT);
                 CREATE TABLE IF NOT EXISTS crowd_obs (
                     match_key TEXT PRIMARY KEY, created_at TEXT,
                     p_home REAL, p_draw REAL, p_away REAL, q_home INTEGER, q_draw INTEGER, q_away INTEGER);
@@ -203,6 +205,29 @@ class Store:
                 "INSERT OR REPLACE INTO settings VALUES (?, ?)", [(k, json.dumps(v)) for k, v in values.items()]
             )
 
-    def clear_settings(self) -> None:
+    def clear_settings(self, keys: tuple[str, ...]) -> None:
         with self._lock, self._db:
-            self._db.execute("DELETE FROM settings")
+            self._db.executemany("DELETE FROM settings WHERE key = ?", [(k,) for k in keys])
+
+    # ---- Letzte Empfehlung vor Anpfiff (für den Rückblick) -------------------------------
+    def save_recommendations(self, spieltag: int | None, recs: dict[str, dict]) -> None:
+        now = self._now()
+        with self._lock, self._db:
+            self._db.executemany(
+                "INSERT OR REPLACE INTO empfehlungen VALUES (?, ?, ?, ?, ?)",
+                [(k, spieltag, json.dumps(v["tip"]), v["ev"], now) for k, v in recs.items()],
+            )
+
+    def recommendations(self) -> dict[str, dict]:
+        with self._lock:
+            rows = self._db.execute("SELECT match_key, spieltag, tip, ev, created_at FROM empfehlungen").fetchall()
+        found = {k: {"spieltag": st, "tip": json.loads(t), "ev": ev, "at": at} for k, st, t, ev, at in rows}
+        stored = set(found)
+        # Spiele aus der Zeit vor dieser Tabelle: letzte Empfehlung aus den gespeicherten Ständen holen
+        with self._lock:
+            snaps = self._db.execute("SELECT created_at, spieltag, data FROM snapshots ORDER BY id").fetchall()
+        for at, st, data in snaps:
+            for m in json.loads(data).get("matches", []):
+                if m.get("open") and m.get("tip") and m["key"] not in stored:
+                    found[m["key"]] = {"spieltag": st, "tip": m["tip"], "ev": m.get("expected_points"), "at": at}
+        return found

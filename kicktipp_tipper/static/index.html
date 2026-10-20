@@ -66,7 +66,13 @@ main { max-width: 980px; margin: 0 auto; padding: 16px; }
 .srow input[type=range] { width: 100%; accent-color: var(--accent); }
 .srow .r { text-align: right; } .srow b { font-variant-numeric: tabular-nums; }
 @media (max-width: 560px) { .srow { grid-template-columns: 1fr 1fr; } .srow input[type=range] { grid-column: 1 / 3; grid-row: 2; } }
-.tabs { max-width: 980px; margin: 0 auto; padding: 0 16px; display: flex; gap: 4px; }
+.tabs { max-width: 980px; margin: 0 auto; padding: 0 16px; display: flex; gap: 4px; overflow-x: auto; }
+.tabs button { white-space: nowrap; }
+tr.clickrow { cursor: pointer; } tr.clickrow.sel td { background: var(--chip); }
+.pos { color: var(--ok); } .neg { color: var(--err); }
+.flag td { background: color-mix(in srgb, var(--warn) 12%, transparent); }
+.keyrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.keyrow input { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); min-width: 260px; }
 .tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 12px; color: var(--muted); }
 .tabs button.on { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
 .tab { display: none; } .tab.on { display: block; }
@@ -135,6 +141,8 @@ h2 { font-size: 15px; margin: 0 0 8px; }
     <button data-tab="tipps" class="on" role="tab">Tipps</button>
     <button data-tab="mitspieler" role="tab">Mitspieler</button>
     <button data-tab="verlauf" role="tab">Verlauf</button>
+    <button data-tab="rueckblick" role="tab">Rückblick</button>
+    <button data-tab="quoten" role="tab">Quoten</button>
     <button data-tab="erklaerung" role="tab">So funktioniert's</button>
   </nav>
 </header>
@@ -189,6 +197,21 @@ h2 { font-size: 15px; margin: 0 0 8px; }
       <p class="sub">Tendenz: eigene Anteile Heim/Remis/Auswärts (oben) gegen die übrige Runde in denselben Spielen (unten). Mehrheit: wie oft mit der Mehrheit der Runde getippt.</p>
       <div class="scroll"><table class="ptable sticky2" id="profTable"></table></div>
     </section>
+  </div>
+
+  <div id="tab-rueckblick" class="tab">
+    <p class="sub">Was hätten die Empfehlungen gebracht? Bewertet wird die letzte Empfehlung vor Anpfiff, so als hättest du sie getippt. Die Rundenquote wird dafür mit allen Tipps exakt nachgerechnet. Empfehlungen gibt es erst, seit das Tool läuft.</p>
+    <div class="tiles" id="rbTiles"></div>
+    <div class="scroll"><table class="ptable" id="rbTable"></table></div>
+    <section><h2 id="rbDetailTitle"></h2><div class="scroll"><table class="ptable" id="rbDetail"></table></div></section>
+  </div>
+
+  <div id="tab-quoten" class="tab">
+    <p class="sub">Wettquoten vieler Buchmacher (The Odds API) neben der eigenen Prognose, um größere Abweichungen zu finden. Diese Quoten fließen <b>nicht</b> in die Empfehlungen ein und werden nur auf Klick abgerufen.</p>
+    <div class="keyrow"><input id="oddsKey" type="password" autocomplete="off" placeholder="API-Schlüssel von the-odds-api.com"><button id="oddsKeySave">Schlüssel speichern</button><span id="oddsKeyInfo" class="sub"></span></div>
+    <div class="toolbar" style="margin-top:10px"><button id="oddsFetch" class="primary">Quoten abrufen</button><span id="oddsInfo" class="sub"></span>
+      <label class="sub"><input type="checkbox" id="oddsOnlyFlag"> nur auffällige Spiele</label></div>
+    <div class="scroll"><table class="ptable" id="oddsTable"></table></div>
   </div>
 
   <div id="tab-erklaerung" class="tab">
@@ -396,7 +419,7 @@ $("release").onclick = async () => {
 let currentTab = "tipps";
 function showTab(name) {
   currentTab = name;
-  document.body.classList.toggle("wide", name === "mitspieler" || name === "verlauf");
+  document.body.classList.toggle("wide", ["mitspieler", "verlauf", "quoten", "rueckblick"].includes(name));
   document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("on", t.id === "tab-" + name));
   document.querySelector(".nav").style.display = name === "tipps" ? "" : "none";
@@ -406,6 +429,8 @@ function showTab(name) {
   if (name === "mitspieler") loadMitspieler();
   if (name === "verlauf") loadVerlauf();
   if (name === "erklaerung") loadErklaerung($("explSel").value || null);
+  if (name === "rueckblick") loadRueckblick();
+  if (name === "quoten") loadQuoten({});
 }
 document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
 
@@ -504,6 +529,76 @@ async function loadAbgleich(spieltag) {
     }).join("")}</tr>`).join("")}
     <tr><td></td><td class="sub">Rundenquote Ist</td><td></td>${g.map((m) => `<td class="sub">${m.quote_ist ? m.quote_ist.join("-") : "–"}</td>`).join("")}</tr>${qrow}</tbody>`;
 }
+
+// ---- Rückblick ----------------------------------------------------------------------------
+const num = (x, d = 0) => x == null ? "–" : x.toLocaleString("de-DE", { maximumFractionDigits: d, minimumFractionDigits: d });
+const signed = (x) => x == null ? "–" : `<span class="${x > 0 ? "pos" : x < 0 ? "neg" : ""}">${x > 0 ? "+" : ""}${num(x)}</span>`;
+let rbData = null, rbSel = null;
+async function loadRueckblick() {
+  try { rbData = await api("/api/rueckblick"); } catch (e) { return notice(e.message, "err"); }
+  const g = rbData.gesamt, st = rbData.spieltage;
+  if (!st.length) { $("rbTiles").innerHTML = ""; $("rbTable").innerHTML = `<tr><td class="sub">Noch keine abgeschlossenen Spiele in der Historie.</td></tr>`; $("rbDetail").innerHTML = ""; $("rbDetailTitle").textContent = ""; return; }
+  $("rbTiles").innerHTML = g.spiele_mit_empfehlung ? `
+    <div class="tile"><div class="v">${num(g.empfehlung)}</div><div class="l">Punkte der Empfehlungen (${g.spiele_mit_empfehlung} Spiele)</div></div>
+    <div class="tile"><div class="v">${num(g.vergleichbar_du)}</div><div class="l">deine Punkte in denselben Spielen</div></div>
+    <div class="tile"><div class="v">${signed(g.empfehlung - g.vergleichbar_du)}</div><div class="l">Empfehlung minus du</div></div>`
+    : `<div class="notice">Für die bisherigen Spiele liegen noch keine gespeicherten Empfehlungen vor. Der Vergleich füllt sich ab dem nächsten abgeschlossenen Spieltag.</div>`;
+  $("rbTable").innerHTML = `<thead><tr><th>Spieltag</th><th>du</th><th>Empfehlung</th><th>Differenz</th><th>Ø Runde</th><th>Bester</th><th>abweichend getippt</th></tr></thead><tbody>${st.map((s) =>
+    `<tr class="clickrow" data-st="${s.spieltag}"><td>${s.spieltag}</td><td>${num(s.punkte_du)}</td>
+      <td>${s.punkte_empfehlung == null ? "–" : `${num(s.punkte_empfehlung)} <span class="sub">(${s.spiele_mit_empfehlung} Sp.)</span>`}</td>
+      <td>${s.punkte_empfehlung == null ? "–" : signed(s.punkte_empfehlung - s.punkte_du_vergleichbar)}</td>
+      <td>${num(s.schnitt_runde, 1)}</td><td>${num(s.bester_runde)}</td><td>${s.abweichungen}</td></tr>`).join("")}</tbody>`;
+  document.querySelectorAll("#rbTable tr.clickrow").forEach((r) => r.addEventListener("click", () => showRbDetail(+r.dataset.st)));
+  showRbDetail(rbSel && st.some((s) => s.spieltag === rbSel) ? rbSel : st[st.length - 1].spieltag);
+}
+function showRbDetail(sp) {
+  rbSel = sp;
+  document.querySelectorAll("#rbTable tr.clickrow").forEach((r) => r.classList.toggle("sel", +r.dataset.st === sp));
+  const s = rbData.spieltage.find((x) => x.spieltag === sp);
+  $("rbDetailTitle").textContent = `Spieltag ${sp} im Detail`;
+  $("rbDetail").innerHTML = `<thead><tr><th>Spiel</th><th>Ergebnis</th><th>Rundenquote</th><th>dein Tipp</th><th>Punkte</th><th>Empfehlung</th><th>Punkte</th><th>Ø Runde</th></tr></thead><tbody>${s.spiele.map((g) =>
+    `<tr><td>${esc(g.home)} – ${esc(g.away)}</td><td>${g.ergebnis.join(":")}</td><td>${g.quote ? g.quote.join("-") : "–"}</td>
+      <td>${g.tipp ? g.tipp.join(":") : "–"}</td><td>${num(g.punkte)}</td>
+      <td>${g.empfehlung ? g.empfehlung.join(":") + (g.abweichung ? ' <span class="sub">(abweichend)</span>' : "") : "–"}</td>
+      <td>${g.punkte_empfehlung == null ? "–" : num(g.punkte_empfehlung)}</td><td>${num(g.schnitt_runde, 1)}</td></tr>`).join("")}</tbody>`;
+}
+
+// ---- Quoten -------------------------------------------------------------------------------
+let oddsData = null;
+async function loadQuoten(body) {
+  try { oddsData = await api("/api/quoten", body); } catch (e) { return notice(e.message, "err"); }
+  $("oddsKeyInfo").textContent = oddsData.schluessel ? "Schlüssel ist hinterlegt (nur auf diesem Rechner gespeichert)." : "Noch kein Schlüssel hinterlegt.";
+  $("oddsFetch").disabled = !oddsData.schluessel;
+  const k = oddsData.kontingent;
+  $("oddsInfo").textContent = oddsData.abruf
+    ? `Stand ${fmtTime(oddsData.abruf)}${k?.verbleibend != null ? ` · noch ${k.verbleibend} Abfragen frei` : ""} · ein Abruf kostet 2`
+    : "Noch nicht abgerufen · ein Abruf kostet 2 von 500 Abfragen im Monat";
+  renderQuoten();
+}
+function renderQuoten() {
+  if (!oddsData?.spiele.length) { $("oddsTable").innerHTML = ""; return; }
+  const only = $("oddsOnlyFlag").checked;
+  const T = ["H", "U", "A"];
+  const trip = (p) => p ? p.map((x) => p0(x)).join(" / ") : "–";
+  const rows = oddsData.spiele.filter((g) => !only || g.auffaellig);
+  $("oddsTable").innerHTML = `<thead><tr><th>Spiel</th><th>Anpfiff</th><th>Prognose H/U/A</th><th>Markt (Median)</th><th>Abweichung (Prozentpunkte)</th><th>bwin</th><th>Spanne der Buchmacher</th><th>beste Quoten</th><th>über 2,5 Tore</th></tr></thead><tbody>${rows.map((g) => {
+    if (!g.gefunden) return `<tr><td>${esc(g.home)} – ${esc(g.away)}</td><td>${fmtTime(g.kickoff)}</td><td>${trip(g.prognose)}</td><td colspan="6" class="sub">bei der Odds API nicht gefunden</td></tr>`;
+    const dev = g.abweichung ? g.abweichung.map((d, i) => { const v = Math.round(d * 100); return `${T[i]} ${v > 0 ? "+" : ""}${v === 0 ? 0 : v}`; }).join(" · ") : "–";
+    return `<tr class="${g.auffaellig ? "flag" : ""}"><td>${esc(g.home)} – ${esc(g.away)}<br><span class="sub">${g.buchmacher} Buchmacher</span></td><td>${fmtTime(g.kickoff)}</td>
+      <td>${trip(g.prognose)}</td><td>${trip(g.markt)}</td><td>${g.auffaellig ? "<b>" + dev + "</b>" : dev}</td><td>${trip(g.bwin)}</td>
+      <td>${g.spanne ? g.spanne.map((r, i) => `${T[i]} ${p0(r[0])}–${p0(r[1])}`).join("<br>") : "–"}</td>
+      <td>${g.beste_quoten.map((b, i) => b && b.quote ? `${T[i]} ${num(b.quote, 2)} <span class="sub">${esc(b.buchmacher)}</span>` : "").join("<br>")}</td>
+      <td>${g.ueber25 == null ? "–" : p0(g.ueber25)}</td></tr>`;
+  }).join("")}</tbody>`;
+}
+$("oddsOnlyFlag").addEventListener("change", renderQuoten);
+$("oddsKeySave").onclick = async () => { await loadQuoten({ schluessel: $("oddsKey").value }); $("oddsKey").value = ""; notice("Schlüssel gespeichert.", "ok"); };
+$("oddsFetch").onclick = async () => {
+  if (!confirm("Quoten jetzt abrufen? Das kostet 2 der 500 kostenlosen Abfragen im Monat.")) return;
+  $("oddsFetch").disabled = true; notice("Rufe Quoten ab …");
+  await loadQuoten({ abrufen: true }); notice("");
+  $("oddsFetch").disabled = false;
+};
 
 // ---- So funktioniert's ----------------------------------------------------------------
 const f1 = (x) => (Math.round(x * 10) / 10).toLocaleString("de-DE");

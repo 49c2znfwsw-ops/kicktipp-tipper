@@ -93,7 +93,7 @@ class Engine:
         self._submitted_quote: dict[str, tuple] = {}  # Rundenquote zum selben Zeitpunkt wie die Zählung
         self._defaults = {k: getattr(cfg, k) for k in SLIDERS}
         for k, v in store.settings().items():
-            if k in SLIDERS:
+            if k in SLIDERS and v is not None:
                 setattr(cfg, k, float(v))
 
     # ---- Quellen -----------------------------------------------------------------
@@ -110,15 +110,6 @@ class Engine:
         self._ratings = model.fit_ratings(results, self.cfg.halbwertszeit_tage) if results else self._ratings
         self._ratings_at = now
         return self._ratings
-
-    def market(self) -> list[oddsapi.MarketOdds]:
-        if not self.cfg.odds_api_key:
-            return []
-        try:
-            return self._fetch_odds(self.cfg.odds_api_key, self.cfg.odds_api_sport)
-        except Exception as e:
-            log.warning("The Odds API nicht erreichbar: %s", e)
-            return []
 
     def crowd_model(self) -> crowd.CrowdModel:
         """Tippverhalten der Runde: aus beobachteten Rundenquoten gelernt, sonst Startwerte."""
@@ -495,6 +486,13 @@ class Engine:
                 s["platz"][i] = pos
         return {"spieltage": spieltage, "reihen": sorted(series.values(), key=lambda s: s["platz"][-1] or 999) if spieltage else []}
 
+    # ---- Odds API (nur auf Klick, Reiter "Quoten") ---------------------------------
+    def odds_api_key(self) -> str | None:
+        return self.store.settings().get("odds_api_key") or self.cfg.odds_api_key
+
+    def set_odds_api_key(self, key: str | None) -> None:
+        self.store.save_settings({"odds_api_key": (key or "").strip() or None})
+
     # ---- Einstellungen (Schieber) --------------------------------------------------
     def settings(self) -> dict:
         return {"werte": {k: getattr(self.cfg, k) for k in SLIDERS}, "standard": dict(self._defaults)}
@@ -503,7 +501,7 @@ class Engine:
         """values=None setzt auf die Werte aus config.toml zurück. Rechnet mit dem letzten Spieltag neu."""
         with self._lock:
             if values is None:
-                self.store.clear_settings()
+                self.store.clear_settings(SLIDERS)  # Schlüssel und Quotenabruf bleiben erhalten
                 values = dict(self._defaults)
             else:
                 values = {k: min(1.0, max(0.0, float(v))) for k, v in values.items() if k in SLIDERS}
@@ -547,12 +545,15 @@ class Engine:
         with self._lock:
             self._last_md = md
             ratings = self.ratings()
-            market = self.market()
+            market: list = []  # Odds API nur auf Klick im Reiter "Quoten" – fließt nicht in die Prognose ein
             cm = self.crowd_model()
             recs = [self.recommend(m, ratings, market, cm) for m in md.matches]
             self.apply_strategy_ban(recs)
             self._mark_changes(recs)
             self._save_predictions(md.index, recs)
+            self.store.save_recommendations(
+                md.index, {r.key: {"tip": r.tip, "ev": r.expected_points} for r in recs if r.open and r.tip}
+            )
             self._learn_crowd(md, recs)
             ban = self.cfg.strategieverbot
             self.state = {

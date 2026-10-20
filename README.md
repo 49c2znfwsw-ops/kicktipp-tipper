@@ -86,6 +86,27 @@ Daraus folgt eine **Prognose je Mitspieler und offenem Spiel**. Diese Prognosen 
 
 **Abgleich:** Für den letzten Spieltag stellt der Reiter die Prognose den tatsächlich abgegebenen Tipps gegenüber. Er zeigt die Trefferquote der Tendenz, zum Vergleich die Messlatte „tippt wie die Mehrheit“ und die erwartete gegen die echte Rundenquote. Das Tool speichert dafür vor jedem Anpfiff seine letzte Prognose. Für ältere Spieltage rechnet es nachträglich, mit Profilen nur aus den Spieltagen davor.
 
+### Reiter „Rückblick“
+
+Je Spieltag drei Zahlen nebeneinander:
+- die Punkte, die die letzte Empfehlung vor Anpfiff geholt hätte
+- deine tatsächlichen Punkte
+- der Schnitt und der Beste der Runde
+
+Für die Empfehlung wird die Rundenquote mit allen Tipps exakt nachgerechnet: dein Tipp heraus, die Empfehlung hinein. An Spieltag 6 ergibt diese Rechnung für alle 201 Tipps genau die Punkte von Kicktipp. Mit einem Klick auf einen Spieltag siehst du jedes Spiel im Detail.
+
+### Reiter „Quoten“
+
+Wettquoten vieler Buchmacher über [The Odds API](https://the-odds-api.com) neben der eigenen Prognose. Der Reiter zeigt:
+- den Markt-Median
+- die Abweichung in Prozentpunkten, auffällige Spiele ab 5 Punkten markiert
+- bwin
+- die Spanne der Buchmacher
+- die besten Quoten
+- die Wahrscheinlichkeit für über 2,5 Tore
+
+Der kostenlose API-Schlüssel wird im Reiter eingetragen und nur lokal gespeichert. Abgerufen wird **nur auf Klick**: Ein Abruf kostet 2 der 500 Abfragen im Monat. Diese Quoten fließen nicht in die Empfehlungen ein.
+
 ### Reiter „So funktioniert's“
 
 Rechnet ein Beispielspiel oder ein echtes Spiel des Spieltags Schritt für Schritt durch: von den Wettquoten über die Ergebnis-Wahrscheinlichkeiten, die Rundenquote und die Mitspieler-Prognose bis zu den erwarteten Punkten je Tipp. Alle Zahlen stammen aus derselben Programmlogik wie die Empfehlungen.

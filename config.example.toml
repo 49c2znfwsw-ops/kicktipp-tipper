@@ -10,7 +10,7 @@ runde = "meine-tipprunde"
 openligadb_liga = "bl1"
 # Saison-Startjahr (2026 = Saison 2026/27). Die Vorsaison wird automatisch mit einbezogen.
 saison = 2026
-# Sport-Key bei The Odds API (nur genutzt, wenn ODDS_API_KEY gesetzt ist)
+# Sport-Key bei The Odds API (Reiter "Quoten", Abruf nur auf Klick)
 odds_api_sport = "soccer_germany_bundesliga"
 
 # Punktevergabe der Tipprunde (steht bei Kicktipp unter "Spielregeln").

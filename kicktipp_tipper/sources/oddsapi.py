@@ -67,3 +67,57 @@ def fetch_odds(api_key: str, sport: str, session: requests.Session | None = None
     )
     r.raise_for_status()
     return parse_events(r.json())
+
+
+@dataclass
+class BookOdds:
+    bookmaker: str
+    home: float | None
+    draw: float | None
+    away: float | None
+    over25: float | None
+    under25: float | None
+
+
+@dataclass
+class EventOdds:
+    home: str
+    away: str
+    kickoff: datetime
+    books: list[BookOdds]
+
+
+def parse_detailed(data: list[dict]) -> list[EventOdds]:
+    """Quoten je Buchmacher (für den Quotenvergleich), ohne sie zusammenzufassen."""
+    out = []
+    for ev in data:
+        home, away = ev["home_team"], ev["away_team"]
+        books = []
+        for bm in ev.get("bookmakers", []):
+            h = d = a = o = u = None
+            for mk in bm.get("markets", []):
+                prices = {x["name"]: x["price"] for x in mk.get("outcomes", [])}
+                if mk["key"] == "h2h":
+                    h, d, a = prices.get(home), prices.get("Draw"), prices.get(away)
+                elif mk["key"] == "totals" and {x.get("point") for x in mk.get("outcomes", [])} == {2.5}:
+                    o, u = prices.get("Over"), prices.get("Under")
+            books.append(BookOdds(bm.get("title") or bm.get("key", "?"), h, d, a, o, u))
+        out.append(EventOdds(home, away, datetime.fromisoformat(ev["commence_time"].replace("Z", "+00:00")), books))
+    return out
+
+
+def fetch_raw(api_key: str, sport: str, session: requests.Session | None = None) -> tuple[list[dict], dict]:
+    """Ein Abruf (kostet 2 Abfragen: 1X2 + Über/Unter). Gibt Daten und Kontingent zurück."""
+    s = session or requests.Session()
+    r = s.get(
+        f"{API}/sports/{sport}/odds",
+        params={"apiKey": api_key, "regions": "eu", "markets": "h2h,totals", "oddsFormat": "decimal"},
+        timeout=30,
+    )
+    if r.status_code == 401:
+        raise ValueError("Der API-Schlüssel wurde abgelehnt – bitte prüfen.")
+    if r.status_code == 429:
+        raise ValueError("Das Abfrage-Kontingent ist aufgebraucht oder es wurde zu oft abgefragt.")
+    r.raise_for_status()
+    quota = {"verbleibend": r.headers.get("x-requests-remaining"), "verbraucht": r.headers.get("x-requests-used")}
+    return r.json(), quota
