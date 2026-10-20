@@ -109,6 +109,8 @@ Wettquoten vieler Buchmacher über [The Odds API](https://the-odds-api.com) nebe
 - die besten Quoten
 - die Wahrscheinlichkeit für über 2,5 Tore
 
+Jeder Abruf wird zusätzlich **komplett archiviert**: alle Spiele, die die Odds API gerade anbietet (auch die künftiger Spieltage), mit den Quoten jedes einzelnen Buchmachers (1X2 und Über/Unter 2,5) und deren Zeitstempel. Das Archiv lässt sich im Reiter als CSV herunterladen (öffnet sich in Excel) und ist der Grundstock, um später zu prüfen, welche Quellen am treffsichersten waren.
+
 Der kostenlose API-Schlüssel wird im Reiter eingetragen und nur lokal gespeichert. Abgerufen wird **nur auf Klick**: Ein Abruf kostet 2 der 500 Abfragen im Monat. Diese Quoten fließen nicht in die Empfehlungen ein.
 
 ### Reiter „So funktioniert's“

@@ -1,4 +1,5 @@
 """Rückblick (Empfehlung vs. eigene Tipps vs. Runde) und Quotenvergleich (Odds API auf Klick)."""
+import copy
 from pathlib import Path
 
 import pytest
@@ -158,3 +159,20 @@ def test_market_trend_between_fetches(tmp_path, monkeypatch):
     data.append(moved)
     second = client.post("/api/quoten", json={"abrufen": True}).json()["spiele"][0]
     assert second["trend_markt"]["gesamt"][0] > 0
+
+
+def test_odds_archive_keeps_every_fetch(tmp_path, monkeypatch):
+    future = copy.deepcopy(ODDS)[0]
+    future.update({"id": "evt-spieltag-9", "home_team": "FC Bayern München", "away_team": "1. FC Köln",
+                   "commence_time": "2026-11-07T14:30:00Z"})
+    monkeypatch.setattr(oddsapi, "fetch_raw", lambda key, sport, session=None: (ODDS + [future], {"verbleibend": "498"}))
+    monkeypatch.setattr(t, "FakeKicktipp", tm.HistFake)
+    engine, _ = t.make_engine(tmp_path, rules=RULES, anzahl_tipper=25)
+    client = TestClient(t.create_app(engine, background=False))
+    engine.refresh()
+    client.post("/api/quoten", json={"schluessel": "k"})
+    r = client.post("/api/quoten", json={"abrufen": True}).json()
+    # auch das Spiel eines späteren Spieltags landet im Archiv
+    assert r["archiv"]["spiele"] == 2 and r["archiv"]["buchmacher"] == 2 and r["archiv"]["quoten"] == 4
+    csv_text = client.get("/api/quoten/archiv.csv").text
+    assert "buchmacher" in csv_text.splitlines()[0] and "FC Bayern München" in csv_text and "1,41" in csv_text

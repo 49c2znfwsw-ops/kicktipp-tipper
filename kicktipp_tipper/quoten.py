@@ -120,6 +120,8 @@ def run(engine, fetch: bool) -> dict:
     key = engine.odds_api_key()
     saved = engine.store.settings().get("quoten_abruf")
     history = engine.store.settings().get("quoten_verlauf") or []
+    if saved and not engine.store.odds_archive_stats()["quoten"]:
+        engine.store.archive_odds(saved["zeit"], saved["daten"])  # Abruf aus der Zeit vor dem Archiv übernehmen
     state = engine.state or {}
     matches = state.get("matches", [])
     if fetch:
@@ -130,6 +132,7 @@ def run(engine, fetch: bool) -> dict:
         rows = compare(oddsapi.parse_detailed(data), matches)
         history = (history + [{"zeit": saved["zeit"], "markt": {r["key"]: r["markt"] for r in rows if r.get("markt")}}])[-MAX_ABRUFE:]
         engine.store.save_settings({"quoten_abruf": saved, "quoten_verlauf": history})
+        engine.store.archive_odds(saved["zeit"], data)
     result = {"schluessel": bool(key), "abruf": None, "schwelle": ABWEICHUNG_PP, "leicht": LEICHT_PP, "bewegung": BEWEGUNG_PP}
     events = []
     if saved:
@@ -142,4 +145,5 @@ def run(engine, fetch: bool) -> dict:
         markt = [(h["zeit"], h["markt"][r["key"]]) for h in history if h["markt"].get(r["key"])]
         r["trend_markt"] = trend(markt, "Markt (Odds API)") if len(markt) >= 2 else None
     result["spiele"] = rows
+    result["archiv"] = engine.store.odds_archive_stats()
     return result

@@ -44,6 +44,10 @@ class Store:
                 CREATE TABLE IF NOT EXISTS crowd_obs (
                     match_key TEXT PRIMARY KEY, created_at TEXT,
                     p_home REAL, p_draw REAL, p_away REAL, q_home INTEGER, q_draw INTEGER, q_away INTEGER);
+                CREATE TABLE IF NOT EXISTS quoten_archiv (
+                    abruf TEXT, event_id TEXT, anpfiff TEXT, heim TEXT, gast TEXT, buchmacher TEXT, stand TEXT,
+                    quote_heim REAL, quote_remis REAL, quote_gast REAL, ueber25 REAL, unter25 REAL,
+                    PRIMARY KEY (abruf, event_id, buchmacher));
                 """
             )
 
@@ -217,6 +221,37 @@ class Store:
             self._db.executemany(
                 "INSERT OR REPLACE INTO settings VALUES (?, ?)", [(k, json.dumps(v)) for k, v in values.items()]
             )
+
+    def archive_odds(self, abruf: str, data: list[dict]) -> int:
+        """Legt einen kompletten Odds-API-Abruf ab: alle Spiele, alle Buchmacher. Gibt die Zahl der Zeilen zurück."""
+        rows = []
+        for ev in data:
+            home, away = ev.get("home_team"), ev.get("away_team")
+            for bm in ev.get("bookmakers", []):
+                h = d = a = o = u = None
+                for mk in bm.get("markets", []):
+                    prices = {x["name"]: x["price"] for x in mk.get("outcomes", [])}
+                    if mk.get("key") == "h2h":
+                        h, d, a = prices.get(home), prices.get("Draw"), prices.get(away)
+                    elif mk.get("key") == "totals" and {x.get("point") for x in mk.get("outcomes", [])} == {2.5}:
+                        o, u = prices.get("Over"), prices.get("Under")
+                rows.append((abruf, ev.get("id") or f"{home}|{away}|{ev.get('commence_time')}", ev.get("commence_time"),
+                             home, away, bm.get("title") or bm.get("key"), bm.get("last_update"), h, d, a, o, u))
+        with self._lock, self._db:
+            self._db.executemany("INSERT OR IGNORE INTO quoten_archiv VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
+        return len(rows)
+
+    def odds_archive_stats(self) -> dict:
+        with self._lock:
+            n, abrufe, spiele, books, first, last = self._db.execute(
+                "SELECT COUNT(*), COUNT(DISTINCT abruf), COUNT(DISTINCT event_id), COUNT(DISTINCT buchmacher), MIN(abruf), MAX(abruf)"
+                " FROM quoten_archiv").fetchone()
+        return {"quoten": n, "abrufe": abrufe, "spiele": spiele, "buchmacher": books, "erster": first, "letzter": last}
+
+    def odds_archive(self) -> tuple[list[str], list[tuple]]:
+        with self._lock:
+            cur = self._db.execute("SELECT * FROM quoten_archiv ORDER BY abruf, anpfiff, heim, buchmacher")
+            return [c[0] for c in cur.description], cur.fetchall()
 
     def clear_settings(self, keys: tuple[str, ...]) -> None:
         with self._lock, self._db:

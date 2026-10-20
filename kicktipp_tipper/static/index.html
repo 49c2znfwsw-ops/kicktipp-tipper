@@ -228,6 +228,7 @@ h2 { font-size: 15px; margin: 0 0 8px; }
     <div class="toolbar" style="margin-top:10px"><button id="oddsFetch" class="primary">Quoten abrufen</button><span id="oddsInfo" class="sub"></span>
       <label class="sub"><input type="checkbox" id="oddsOnlyFlag"> nur auffällige Spiele</label>
       <label class="sub"><input type="checkbox" id="oddsSort"> nach Abweichung sortieren</label></div>
+    <p class="sub" id="oddsArchive"></p>
     <div class="legend" id="oddsLegend"></div>
     <div class="scroll"><table class="ptable" id="oddsTable"></table></div>
   </div>
@@ -633,6 +634,10 @@ async function loadQuoten(body) {
   $("oddsInfo").textContent = oddsData.abruf
     ? `Stand ${fmtTime(oddsData.abruf)}${k?.verbleibend != null ? ` · noch ${k.verbleibend} Abfragen frei` : ""} · ein Abruf kostet 2`
     : "Noch nicht abgerufen · ein Abruf kostet 2 von 500 Abfragen im Monat";
+  const a = oddsData.archiv;
+  $("oddsArchive").innerHTML = a?.quoten
+    ? `Archiv: ${a.abrufe} ${a.abrufe === 1 ? "Abruf" : "Abrufe"} seit ${fmtTime(a.erster)} · ${a.spiele} Spiele (auch künftige Spieltage) · ${a.buchmacher} Buchmacher · ${a.quoten.toLocaleString("de-DE")} Quotenzeilen · <a href="/api/quoten/archiv.csv">als CSV herunterladen</a>`
+    : "Archiv: Jeder Abruf wird komplett gespeichert – alle Spiele, alle Buchmacher.";
   renderQuoten();
 }
 const DEV_FULL = 0.10;  // ab 10 Prozentpunkten volle Farbe

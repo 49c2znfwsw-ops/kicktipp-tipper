@@ -11,7 +11,7 @@ from pathlib import Path
 import os
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, Field
 
@@ -185,6 +185,20 @@ def create_app(engine: Engine, background: bool = True) -> FastAPI:
             raise HTTPException(400, str(e))
         except Exception as e:
             raise HTTPException(502, f"Quoten nicht abrufbar: {e}")
+
+    @app.get("/api/quoten/archiv.csv", dependencies=[Depends(auth)])
+    def quoten_archiv():
+        import csv
+        import io
+
+        cols, rows = engine.store.odds_archive()
+        buf = io.StringIO()
+        w = csv.writer(buf, delimiter=";")
+        w.writerow(cols)
+        w.writerows([[str(x).replace(".", ",") if isinstance(x, float) else x for x in r] for r in rows])
+        # mit BOM, damit Excel die Umlaute richtig liest
+        return Response("\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": 'attachment; filename="quoten-archiv.csv"'})
 
     @app.get("/api/releases", dependencies=[Depends(auth)])
     def releases():
