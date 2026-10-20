@@ -61,6 +61,8 @@ kicktipp-tipper freigeben --nur-leere    # nur Spiele, die du noch nicht getippt
 
 In der Oberfläche sind die Spiele vorausgewählt, deren abgegebener Tipp von der Empfehlung abweicht. Du kannst Tipps überschreiben und Spiele an- oder abwählen. Ein Klick auf **„Auswahl freigeben“** gibt die Tipps nach einer Rückfrage ab. Anschließend lädt das Tool die Seite neu und prüft, ob Kicktipp jeden Tipp übernommen hat. Jede Freigabe landet im Protokoll.
 
+**Lohnt sich das Anpassen?** Oben auf dem Reiter „Tipps“ steht, wie viele erwartete Punkte das Umstellen deiner Tipps auf die Empfehlungen insgesamt bringt, mit den größten Posten einzeln. Dazu kommt, was offene Spiele ohne Tipp wert sind. Ein Knopf wählt nur die lohnenden Änderungen (ab +0,05) und die fehlenden Tipps aus.
+
 **Abgegebene Tipps:** Vor Anpfiff zeigt Kicktipp in der Tippübersicht, wer schon getippt hat. Die Tipps selbst bleiben verdeckt („-:-“). Das Tool zeigt je Spiel „abgegeben: 4 von 25“ und rechnet damit genauer. Aus der Zahl der Tipps und der Rundenquote ergibt sich die bisherige Verteilung, bei wenigen Tipps exakt, bei vielen auf ±1–2 Tipps genau. Prognostiziert werden nur noch die Mitspieler, die noch nicht getippt haben.
 
 **Modell einstellen:** Oben auf dem Reiter „Tipps“ gibt es zwei Schieber:

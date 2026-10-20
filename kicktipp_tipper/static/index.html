@@ -60,6 +60,13 @@ main { max-width: 980px; margin: 0 auto; padding: 16px; }
 .change b { color: var(--warn); }
 .change button { padding: 2px 10px; font-size: 13px; }
 #seenAll { display: none; border-color: var(--warn); color: var(--warn); }
+.gainbox { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; align-items: start; }
+.gainbox .v { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.gainbox .l { font-size: 12px; color: var(--muted); }
+.gainbox ul { margin: 4px 0 0; padding-left: 16px; font-size: 13px; }
+.gainbox .main { grid-column: span 2; }
+@media (max-width: 560px) { .gainbox .main { grid-column: 1 / -1; } }
+.gainbox .verdict { grid-column: 1 / -1; font-size: 13px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .sliders { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; }
 .sliders summary { font-weight: 600; font-size: 14px; }
 .srow { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(140px, 2fr) minmax(120px, 1fr); gap: 10px; align-items: center; margin-top: 10px; font-size: 13px; }
@@ -149,6 +156,7 @@ h2 { font-size: 15px; margin: 0 0 8px; }
 <main>
   <div id="notice"></div>
   <div id="tab-tipps" class="tab on">
+  <div class="gainbox" id="gainbox" hidden></div>
   <details class="sliders" id="sliders">
     <summary>Modell einstellen <span class="sub" id="sliderSummary"></span></summary>
     <div class="srow">
@@ -266,7 +274,7 @@ function render() {
     const t = m.tip || m.current_tip || ["", ""];
     const status = !m.current_tip ? `<span class="status-none">noch nicht getippt</span>`
       : (m.tip && tipStr(m.current_tip) === tipStr(m.tip)) ? `<span class="status-ok">Empfehlung ist getippt</span>`
-      : `<span class="status-diff">getippt ${tipStr(m.current_tip)}${m.current_tip_points != null ? ` (${m.current_tip_points.toFixed(2)} Pkt.)` : ""}</span>`;
+      : `<span class="status-diff">getippt ${tipStr(m.current_tip)}${m.current_tip_points != null ? ` (${m.current_tip_points.toFixed(2)} Pkt.)` : ""}${m.open && m.current_tip_points != null && m.expected_points != null ? ` · Anpassen bringt +${(m.expected_points - m.current_tip_points).toFixed(2)}` : ""}</span>`;
     const p = m.probs;
     const bar = p ? `<div class="probs" title="Heim ${(p.heim*100).toFixed(0)} % · Remis ${(p.remis*100).toFixed(0)} % · Gast ${(p.gast*100).toFixed(0)} %">
         <span style="width:${p.heim*100}%"></span><span style="width:${p.remis*100}%"></span><span style="width:${p.gast*100}%"></span></div>` : "";
@@ -297,6 +305,7 @@ function render() {
       </div>
     </div>`;
   }).join("");
+  renderGain();
   const withCount = state.matches.filter((m) => m.abgegeben != null && m.open);
   if (withCount.length) {
     const lo = Math.min(...withCount.map((m) => m.abgegeben)), hi = Math.max(...withCount.map((m) => m.abgegeben));
@@ -355,6 +364,47 @@ async function markSeen(keys) {
   catch (e) { notice(e.message, "err"); }
 }
 $("seenAll").onclick = () => markSeen(null);
+
+// ---- Gewinn durch Anpassungen ------------------------------------------------------------
+const GAIN_MIN = 0.05; // darunter lohnt eine Änderung kaum
+function gainParts() {
+  const open = state.matches.filter((m) => m.open && m.tip && m.expected_points != null);
+  const changes = open.filter((m) => m.current_tip && tipStr(m.current_tip) !== tipStr(m.tip) && m.current_tip_points != null)
+    .map((m) => ({ m, gain: m.expected_points - m.current_tip_points })).sort((a, b) => b.gain - a.gain);
+  const missing = open.filter((m) => !m.current_tip);
+  return { open, changes, missing };
+}
+function renderGain() {
+  const box = $("gainbox");
+  const { open, changes, missing } = gainParts();
+  if (!open.length) { box.hidden = true; return; }
+  box.hidden = false;
+  const total = changes.reduce((a, c) => a + c.gain, 0);
+  const worth = changes.filter((c) => c.gain >= GAIN_MIN);
+  const missingEv = missing.reduce((a, m) => a + m.expected_points, 0);
+  const perMatchday = open.reduce((a, m) => a + m.expected_points, 0);
+  const verdict = !changes.length && !missing.length ? "Deine Tipps entsprechen den Empfehlungen – nichts zu tun."
+    : missing.length ? `Wichtig: ${missing.length} offene${missing.length === 1 ? "s Spiel ist" : " Spiele sind"} noch nicht getippt – ohne Tipp gibt es sicher 0 Punkte.`
+    : total < 0.1 ? "Kaum lohnend: Die Anpassungen bringen zusammen weniger als 0,1 erwartete Punkte."
+    : total < 0.5 ? "Etwas lohnend: kleiner, aber messbarer Gewinn."
+    : "Lohnend: Die Anpassungen bringen spürbar mehr erwartete Punkte.";
+  box.innerHTML = `
+    <div class="main"><div class="v">${changes.length ? "+" + num(total, 2) : "0"}</div><div class="l">erwartete Punkte durch Anpassen von ${changes.length} Tipp${changes.length === 1 ? "" : "s"}${perMatchday && changes.length ? ` – ≈${num(100 * total / perMatchday, 1)} % der erwarteten Punkte der offenen Spiele (${num(perMatchday, 1)})` : ""}</div>
+      ${changes.length ? `<ul>${changes.slice(0, 3).map((c) => `<li>${esc(c.m.home)} – ${esc(c.m.away)}: ${tipStr(c.m.current_tip)} → ${tipStr(c.m.tip)} <b>+${num(c.gain, 2)}</b></li>`).join("")}${changes.length > 3 ? `<li class="sub">… und ${changes.length - 3} weitere</li>` : ""}</ul>` : ""}</div>
+    <div><div class="v">${missing.length ? num(missingEv, 2) : "–"}</div><div class="l">${missing.length ? `erwartete Punkte in ${missing.length} noch nicht getippten Spiel${missing.length === 1 ? "" : "en"}` : "alle offenen Spiele sind getippt"}</div></div>
+    <div><div class="v">${worth.length}</div><div class="l">Änderungen ab +${num(GAIN_MIN, 2)} Punkten</div></div>
+    <div class="verdict"><span>${verdict}</span>${worth.length || missing.length ? '<button id="selectWorth">Nur lohnende Änderungen und fehlende Tipps auswählen</button>' : ""}</div>`;
+  const btn = $("selectWorth");
+  if (btn) btn.onclick = () => {
+    const keep = new Set([...worth.map((c) => c.m.key), ...missing.map((m) => m.key)]);
+    document.querySelectorAll(".match").forEach((card) => {
+      const cb = card.querySelector(".sel");
+      if (!cb.disabled) cb.checked = keep.has(card.dataset.key);
+    });
+    dirty = true;
+    notice(`${keep.size} Spiel${keep.size === 1 ? "" : "e"} ausgewählt – mit „Auswahl freigeben“ abgeben.`, "ok");
+  };
+}
 
 // ---- Schieber ---------------------------------------------------------------------------
 let sliderTimer = null, sliderDefaults = null;
