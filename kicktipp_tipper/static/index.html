@@ -638,7 +638,10 @@ async function loadQuoten(body) {
   $("oddsArchive").innerHTML = a?.quoten
     ? `Archiv: ${a.abrufe} ${a.abrufe === 1 ? "Abruf" : "Abrufe"} seit ${fmtTime(a.erster)} · ${a.spiele} Spiele (auch künftige Spieltage) · ${a.buchmacher} Buchmacher · ${a.quoten.toLocaleString("de-DE")} Quotenzeilen · <a href="/api/quoten/archiv.csv">als CSV herunterladen</a>`
     : "Archiv: Jeder Abruf wird komplett gespeichert – alle Spiele, alle Buchmacher.";
-  renderQuoten();
+  renderQuotenSafe();
+}
+function renderQuotenSafe() {
+  try { renderQuoten(); } catch (e) { notice(`Quoten-Tabelle konnte nicht angezeigt werden: ${e.message}`, "err"); console.error(e); }
 }
 const DEV_FULL = 0.10;  // ab 10 Prozentpunkten volle Farbe
 function devBadge(d, label) {
@@ -695,7 +698,7 @@ function renderQuoten() {
     const tip = g.empfehlung ? `${g.empfehlung.join(":")} <span class="sub">(${T[tend]})</span>` : "–";
     const moves = `<td>${moveCell(g.trend_kicktipp, tend)}</td><td>${g.trend_markt ? moveCell(g.trend_markt, tend) : `<span class="sub">${oddsData.abruf ? "ab dem 2. Abruf" : "–"}</span>`}</td>`;
     if (!g.gefunden) return `<tr><td>${esc(g.home)} – ${esc(g.away)}</td><td>${fmtTime(g.kickoff)}</td><td>${tip}</td><td>${trip(g.prognose)}</td>
-      <td colspan="2" class="sub">${oddsData.abruf ? "bei der Odds API nicht gefunden" : "Markt noch nicht abgerufen"}</td>${moves}<td colspan="4"></td></tr>`;
+      <td colspan="2" class="sub">${g.fehler ? `<span style="color: var(--err)">Fehler: ${esc(g.fehler)}</span>` : oddsData.abruf ? "bei der Odds API nicht gefunden" : "Markt noch nicht abgerufen"}</td>${moves}<td colspan="4"></td></tr>`;
     const md = maxDev(g), lvl = md >= oddsData.schwelle ? "dev2" : md >= oddsData.leicht ? "dev1" : "";
     const dev = g.abweichung ? g.abweichung.map((d, i) => devBadge(d, T[i])).join("") : "–";
     return `<tr class="${lvl}"><td>${esc(g.home)} – ${esc(g.away)}<br><span class="sub">${g.buchmacher} Buchmacher</span></td><td>${fmtTime(g.kickoff)}</td><td>${tip}</td>
@@ -705,8 +708,8 @@ function renderQuoten() {
       <td>${g.ueber25 == null ? "–" : p0(g.ueber25)}</td></tr>`;
   }).join("")}</tbody>`;
 }
-$("oddsOnlyFlag").addEventListener("change", renderQuoten);
-$("oddsSort").addEventListener("change", renderQuoten);
+$("oddsOnlyFlag").addEventListener("change", renderQuotenSafe);
+$("oddsSort").addEventListener("change", renderQuotenSafe);
 $("oddsKeySave").onclick = async () => { await loadQuoten({ schluessel: $("oddsKey").value }); $("oddsKey").value = ""; notice("Schlüssel gespeichert.", "ok"); };
 $("oddsFetch").onclick = async () => {
   if (!confirm("Quoten jetzt abrufen? Das kostet 2 der 500 kostenlosen Abfragen im Monat.")) return;
