@@ -93,6 +93,9 @@ def update() -> bool:
         return True
     except Exception as e:  # ohne Internet o. Ä. einfach mit der vorhandenen Version weiter
         print(f"Update-Prüfung nicht möglich ({e}). Starte vorhandene Version.\n")
+        if getattr(e, "code", None) == 404:
+            print(f"Hinweis: Das GitHub-Repository {REPO} ist nicht öffentlich erreichbar (privat gestellt?).")
+            print("Updates gibt es nur, wenn es auf GitHub unter Settings → General → Danger Zone wieder auf „Public“ steht.\n")
         return False
 
 
