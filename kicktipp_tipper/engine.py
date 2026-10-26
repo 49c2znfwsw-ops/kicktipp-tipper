@@ -84,6 +84,7 @@ class Engine:
         self._ratings: model.TeamRatings | None = None
         self._ratings_at: datetime | None = None
         self._lock = threading.RLock()
+        self._genauigkeit: tuple | None = None  # (Stand der Historie, Ergebnis)
         self._ranked: dict[str, list[TipValue]] = {}
         self.state: dict | None = store.latest_snapshot()
         self.me_id: str | None = (self.state or {}).get("ich")
@@ -440,6 +441,32 @@ class Engine:
             },
         }
 
+    def genauigkeit(self) -> dict[str, dict]:
+        """Wie oft die Prognose die Tipptendenz je Mitspieler getroffen hat – über alle abgeschlossenen Spieltage.
+
+        Grundlage wie im Abgleich: gespeicherte Prognose vor Anpfiff, sonst nachträglich nur aus früheren Spieltagen.
+        Zum Vergleich die Trefferquote, wenn man einfach auf die Mehrheit der Runde setzt.
+        """
+        history = self.store.history()
+        key = (len(history["tips"]), len(history["members"]))
+        if self._genauigkeit and self._genauigkeit[0] == key:
+            return self._genauigkeit[1]
+        out: dict[str, dict] = {}
+        for sp in sorted({t["spieltag"] for t in history["tips"]}):
+            for r in self.abgleich(sp)["tipper"]:
+                g = out.setdefault(r["member_id"], {"treffer": 0, "bewertet": 0, "mehrheit": 0, "spieltage": 0})
+                judged = [c for c in r["zellen"] if c["treffer"] is not None]
+                g["treffer"] += sum(c["treffer"] for c in judged)
+                g["mehrheit"] += sum(bool(c["mehrheit"]) for c in judged)
+                g["bewertet"] += len(judged)
+                g["spieltage"] += bool(judged)
+        for g in out.values():
+            n = g["bewertet"]
+            g["quote"] = g["treffer"] / n if n else None
+            g["mehrheit_quote"] = g["mehrheit"] / n if n else None
+        self._genauigkeit = (key, out)
+        return out
+
     def history_due(self) -> bool:
         return self._history_at is None or datetime.now(timezone.utc) - self._history_at > HISTORY_TTL
 
@@ -463,7 +490,7 @@ class Engine:
                 "tipper": {mid: [round(float(x), 3) for x in profiles.predict(mid, m["home"], m["away"], basis)]
                            for mid in profiles.others()},
             })
-        return {"profile": profiles.as_dict(), "prognosen": prognosen,
+        return {"profile": profiles.as_dict(), "prognosen": prognosen, "genauigkeit": self.genauigkeit(),
                 "spieltage": sorted(self.store.loaded_spieltage()), "ich": self.me_id}
 
     def verlauf(self) -> dict:

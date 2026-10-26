@@ -86,6 +86,8 @@ Nach Ablauf der Tippzeit zeigt Kicktipp allen Mitgliedern die Tipps der anderen 
 
 Daraus folgt eine **Prognose je Mitspieler und offenem Spiel**. Diese Prognosen ersetzen in den Empfehlungen die grobe Schätzung des Rundenverhaltens. Sie liefern außerdem die erwartete Zahl aktiver Tipper, denn für die Quote zählen nur abgegebene Tipps. Die Daten bleiben lokal in der Datenbank auf deinem Rechner.
 
+Die Spalte **„Prognose trifft“** zeigt je Mitspieler, wie oft die Prognose seine Tipptendenz an den bisherigen Spieltagen richtig vorhergesagt hat, mit der Zahl der bewerteten Tipps in Klammern. Grün heißt: mindestens 5 Prozentpunkte besser, als einfach auf die Mehrheit der Runde zu setzen. Rot heißt: schlechter. Grundlage ist dieselbe Rechnung wie im Abgleich, also die vor Anpfiff gespeicherte Prognose oder, für ältere Spieltage, eine nachträgliche Prognose nur aus den Spieltagen davor.
+
 **Abgleich:** Für den letzten Spieltag stellt der Reiter die Prognose den tatsächlich abgegebenen Tipps gegenüber. Er zeigt die Trefferquote der Tendenz, zum Vergleich die Messlatte „tippt wie die Mehrheit“ und die erwartete gegen die echte Rundenquote. Das Tool speichert dafür vor jedem Anpfiff seine letzte Prognose. Für ältere Spieltage rechnet es nachträglich, mit Profilen nur aus den Spieltagen davor.
 
 ### Reiter „Rückblick“

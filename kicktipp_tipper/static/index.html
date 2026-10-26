@@ -199,7 +199,7 @@ h2 { font-size: 15px; margin: 0 0 8px; }
     <div class="toolbar"><span id="histInfo" class="sub"></span><button id="histLoad">Historie neu laden</button></div>
     <section>
       <h2>Prognose für die offenen Spiele</h2>
-      <p class="sub">Wahrscheinlichste Tendenz je Mitspieler, aus dessen bisherigem Tippverhalten und dem aktuellen Stand der Runde.</p>
+      <p class="sub">Wahrscheinlichste Tendenz je Mitspieler, aus dessen bisherigem Tippverhalten und dem aktuellen Stand der Runde. „Prognose trifft“: wie oft die Prognose die Tendenz dieses Mitspielers an den bisherigen Spieltagen richtig vorhergesagt hat – <span class="pos">grün</span>, wenn sie mindestens 5 Punkte besser ist als einfach auf die Mehrheit der Runde zu setzen, <span class="neg">rot</span>, wenn sie schlechter ist (Mauszeiger darauf für Details).</p>
       <div class="scroll"><table class="ptable sticky2" id="progTable"></table></div>
     </section>
     <section>
@@ -503,10 +503,22 @@ function miniBar(a) {
   return `<span class="mini">${a.map((x, i) => `<span style="width:${x * 100}%;background:${TCOL[i]}"></span>`).join("")}</span>`;
 }
 // Eigene Zeile über den Prognosen: aktueller Tipp, Empfehlung und wie viele voraussichtlich gleich tippen
+function accCell(g) {
+  if (!g || !g.bewertet) return `<span class="sub" title="Noch kein abgeschlossener Spieltag mit Prognose und Tipp">–</span>`;
+  const diff = g.quote - g.mehrheit_quote;
+  const cls = diff >= 0.05 ? "pos" : diff <= -0.05 ? "neg" : "";
+  const tip = `${g.treffer} von ${g.bewertet} Tipptendenzen getroffen (${g.spieltage} Spieltage). Zum Vergleich: Wer einfach auf die Mehrheit der Runde setzt, trifft bei diesem Mitspieler ${pct(g.mehrheit_quote)}.`;
+  return `<span class="${cls}" title="${esc(tip)}">${pct(g.quote)}</span> <span class="sub">(${g.bewertet})</span>`;
+}
+function accTotal(acc, players) {
+  const t = { treffer: 0, bewertet: 0, mehrheit: 0, spieltage: 0 };
+  players.forEach((p) => { const g = acc?.[p.member_id]; if (g) { t.treffer += g.treffer; t.bewertet += g.bewertet; t.mehrheit += g.mehrheit; t.spieltage = Math.max(t.spieltage, g.spieltage); } });
+  return t.bewertet ? { ...t, quote: t.treffer / t.bewertet, mehrheit_quote: t.mehrheit / t.bewertet } : null;
+}
 function myRow(games, others, me) {
   const byKey = Object.fromEntries((state?.matches || []).map((m) => [m.key, m]));
   const tend = (t) => t[0] > t[1] ? 0 : t[0] === t[1] ? 1 : 2;
-  return `<tr class="me"><td>${me?.platz ?? "–"}</td><td>Du</td><td></td>${games.map((g) => {
+  return `<tr class="me"><td>${me?.platz ?? "–"}</td><td>Du</td><td></td><td></td>${games.map((g) => {
     const m = byKey[g.key];
     if (!m) return "<td>–</td>";
     const cur = m.current_tip, rec = m.tip;
@@ -543,14 +555,14 @@ async function loadMitspieler() {
   const games = d.prognosen;
   const byRank = (a, b) => (a.platz ?? 999) - (b.platz ?? 999) || a.name.localeCompare(b.name, "de", { numeric: true });
   const others = d.profile.filter((p) => !p.ich && p.teilnahme >= 0.2).sort(byRank);
-  $("progTable").innerHTML = games.length ? `<thead><tr><th>Platz</th><th>Mitspieler</th><th>tippt zu</th>${games.map((g) => `<th title="${esc(g.home)} – ${esc(g.away)}">${esc(g.home.slice(0, 10))}<br><span class="sub">${esc(g.away.slice(0, 10))}</span></th>`).join("")}</tr></thead>
-    <tbody>${myRow(games, others, d.profile.find((p) => p.ich))}${others.map((p) => `<tr><td>${p.platz ?? "–"}</td><td>${esc(p.name)}</td><td>${pct(p.teilnahme)}</td>${games.map((g) => {
+  $("progTable").innerHTML = games.length ? `<thead><tr><th>Platz</th><th>Mitspieler</th><th title="Wie oft die Prognose die Tipptendenz dieses Mitspielers an früheren Spieltagen getroffen hat (in Klammern: Zahl der bewerteten Tipps)">Prognose<br>trifft</th><th>tippt zu</th>${games.map((g) => `<th title="${esc(g.home)} – ${esc(g.away)}">${esc(g.home.slice(0, 10))}<br><span class="sub">${esc(g.away.slice(0, 10))}</span></th>`).join("")}</tr></thead>
+    <tbody>${myRow(games, others, d.profile.find((p) => p.ich))}${others.map((p) => `<tr><td>${p.platz ?? "–"}</td><td>${esc(p.name)}</td><td>${accCell(d.genauigkeit?.[p.member_id])}</td><td>${pct(p.teilnahme)}</td>${games.map((g) => {
       const pr = g.tipper[p.member_id]; if (!pr) return "<td>–</td>";
       const k = pr.indexOf(Math.max(...pr));
       const done = (g.abgegeben || []).includes(p.member_id);
       return `<td>${done ? '<span class="sub" title="hat schon getippt (Tipp noch verdeckt)">✓ </span>' : ""}<span class="cellp" style="background:color-mix(in srgb, ${TCOL[k]} ${Math.round(pr[k] * 45)}%, transparent)" title="Heim ${pct(pr[0])} · Remis ${pct(pr[1])} · Ausw. ${pct(pr[2])}">${TEND[k]} ${pct(pr[k])}</span></td>`;
     }).join("")}</tr>`).join("")}
-    <tr><td></td><td><b>Runde erwartet</b></td><td></td>${games.map((g) => {
+    <tr><td></td><td><b>Runde erwartet</b></td><td>${accCell(accTotal(d.genauigkeit, others))}</td><td></td>${games.map((g) => {
       let s = [0, 0, 0], w = 0;
       others.forEach((p) => { const pr = g.tipper[p.member_id]; if (pr) { pr.forEach((x, i) => s[i] += x * p.teilnahme); w += p.teilnahme; } });
       return `<td>${miniBar(s.map((x) => x / (w || 1)))}</td>`;

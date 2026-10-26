@@ -255,3 +255,19 @@ def test_tables_sorted_by_rank(tmp_path, monkeypatch):
     assert plaetze == sorted(plaetze)
     abg = [r["platz"] for r in engine.abgleich()["tipper"]]
     assert abg == sorted(abg) and abg[0] == 2  # Platz 1 bin ich
+
+
+def test_genauigkeit_je_mitspieler(tmp_path, monkeypatch):
+    monkeypatch.setattr(t, "FakeKicktipp", HistFake)
+    engine, _ = t.make_engine(tmp_path, rules=ScoringRules(quote=QuoteRule(3, 10)), anzahl_tipper=25)
+    engine.refresh()
+    engine.load_history(pause_s=0)
+    acc = engine.genauigkeit()
+    assert acc and engine.me_id not in acc
+    g = next(iter(acc.values()))
+    assert g["bewertet"] > 0 and 0 <= g["quote"] <= 1 and 0 <= g["mehrheit_quote"] <= 1
+    # entspricht der Summe der Abgleiche aller Spieltage
+    total = sum(r["treffer"] for sp in engine.abgleich()["spieltage"] for r in engine.abgleich(sp)["tipper"])
+    assert sum(x["treffer"] for x in acc.values()) == total
+    assert engine.genauigkeit() is acc  # zwischengespeichert
+    assert "genauigkeit" in engine.mitspieler()
