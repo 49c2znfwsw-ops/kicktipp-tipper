@@ -115,6 +115,13 @@ body.wide .bar, body.wide .tabs, body.wide main { max-width: none; }
 .key { display: inline-block; width: 14px; height: 2px; border-radius: 1px; }
 .pick { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
 .pick button { padding: 3px 9px; font-size: 13px; border-radius: 999px; }
+.rvcols { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 0 24px; }
+.rvitem { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--line); padding: 6px 0; font-variant-numeric: tabular-nums; }
+.rvitem .d { font-weight: 650; white-space: nowrap; }
+.art { display: inline-block; border-radius: 999px; padding: 0 8px; font-size: 13px; background: var(--chip); }
+.art.exakt { background: color-mix(in srgb, var(--ok) 35%, transparent); } .art.Tordifferenz { background: color-mix(in srgb, var(--ok) 22%, transparent); }
+.art.Tendenz { background: color-mix(in srgb, var(--ok) 12%, transparent); } .art.falsch { background: color-mix(in srgb, var(--err) 16%, transparent); }
+#rvDays button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 10px 0 14px; }
 .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
 .tile .v { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; } .tile .l { font-size: 12px; color: var(--muted); }
@@ -156,6 +163,7 @@ h2 { font-size: 15px; margin: 0 0 8px; }
     <button data-tab="tipps" class="on" role="tab">Tipps</button>
     <button data-tab="mitspieler" role="tab">Mitspieler</button>
     <button data-tab="verlauf" role="tab">Verlauf</button>
+    <button data-tab="review" role="tab">Review</button>
     <button data-tab="rueckblick" role="tab">Rückblick</button>
     <button data-tab="quoten" role="tab">Quoten</button>
     <button data-tab="erklaerung" role="tab">So funktioniert's</button>
@@ -213,6 +221,25 @@ h2 { font-size: 15px; margin: 0 0 8px; }
       <p class="sub">Tendenz: eigene Anteile Heim/Remis/Auswärts (oben) gegen die übrige Runde in denselben Spielen (unten). Mehrheit: wie oft mit der Mehrheit der Runde getippt.</p>
       <div class="scroll"><table class="ptable sticky2" id="profTable"></table></div>
     </section>
+  </div>
+
+  <div id="tab-review" class="tab">
+    <p class="sub">Review der Spieltage aus der Kicktipp-Tippübersicht: deine Tipps gegen die Ergebnisse und gegen die Runde. „Ø Runde“ ist der Schnitt aller anderen Mitspieler, Nicht-Tipper zählen mit 0 Punkten. Als Gegentipp gilt ein Tipp, dessen Tendenz höchstens ein Drittel der Runde getippt hat.</p>
+    <div class="toolbar" id="rvDays"></div>
+    <h2 id="rvTitle"></h2>
+    <div class="tiles" id="rvTiles"></div>
+    <section><h2>Spiele</h2><div class="scroll"><table class="ptable" id="rvGames"></table></div></section>
+    <div class="rvcols">
+      <section><h2>Größte Gewinner</h2><p class="sub">Spiele, in denen du am meisten über dem Schnitt der Runde lagst</p><div id="rvWin"></div></section>
+      <section><h2>Größte Verlierer</h2><p class="sub">Spiele, in denen du am meisten unter dem Schnitt der Runde lagst</p><div id="rvLose"></div></section>
+    </div>
+    <section><h2>Direkte Konkurrenz</h2><p class="sub" id="rvKonkInfo"></p><div class="scroll"><table class="ptable" id="rvKonk"></table></div></section>
+    <section><h2>Saison</h2><div class="tiles" id="rvKinds"></div>
+      <div class="scroll"><table class="ptable" id="rvSeason"></table></div>
+      <div class="rvcols">
+        <section><h3>Beste Spiele der Saison</h3><div id="rvSWin"></div></section>
+        <section><h3>Schlechteste Spiele der Saison</h3><div id="rvSLose"></div></section>
+      </div></section>
   </div>
 
   <div id="tab-rueckblick" class="tab">
@@ -480,7 +507,7 @@ $("release").onclick = async () => {
 let currentTab = "tipps";
 function showTab(name) {
   currentTab = name;
-  document.body.classList.toggle("wide", ["mitspieler", "verlauf", "quoten", "rueckblick"].includes(name));
+  document.body.classList.toggle("wide", ["mitspieler", "verlauf", "quoten", "rueckblick", "review"].includes(name));
   document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("on", t.id === "tab-" + name));
   document.querySelector(".nav").style.display = name === "tipps" ? "" : "none";
@@ -491,6 +518,7 @@ function showTab(name) {
   if (name === "verlauf") loadVerlauf();
   if (name === "erklaerung") loadErklaerung($("explSel").value || null);
   if (name === "rueckblick") loadRueckblick();
+  if (name === "review") loadReview(rvSel);
   if (name === "quoten") loadQuoten({});
 }
 document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
@@ -634,6 +662,75 @@ function showRbDetail(sp) {
       <td>${g.tipp ? g.tipp.join(":") : "–"}</td><td>${num(g.punkte)}</td>
       <td>${g.empfehlung ? g.empfehlung.join(":") + (g.abweichung ? ' <span class="sub">(abweichend)</span>' : "") : "–"}</td>
       <td>${g.punkte_empfehlung == null ? "–" : num(g.punkte_empfehlung)}</td><td>${num(g.schnitt_runde, 1)}</td></tr>`).join("")}</tbody>`;
+}
+
+// ---- Review -------------------------------------------------------------------------------
+let rvSel = null;
+const diffBg = (d) => {
+  if (d == null || Math.abs(d) < 0.5) return "";
+  const a = Math.round(Math.min(Math.abs(d) / 8, 1) * 40 + 8);
+  return `background: color-mix(in srgb, var(${d > 0 ? "--ok" : "--err"}) ${a}%, transparent)`;
+};
+const arrowRank = (a, b) => a == null || b == null ? "–" : a === b ? `${a} → ${b}` : `${a} → <b class="${b < a ? "pos" : "neg"}">${b}</b>`;
+function rvItem(g, withDay) {
+  return `<div class="rvitem"><span>${withDay ? `<span class="sub">Sp. ${g.spieltag}</span> ` : ""}${esc(g.home)} – ${esc(g.away)} <b>${g.ergebnis.join(":")}</b>
+    <span class="sub">· dein Tipp ${g.tipp ? g.tipp.join(":") : "–"} (${g.art}) · ${num(g.punkte)} Pkt. gegen Ø ${num(g.schnitt, 1)}${g.gegentipp ? " · Gegentipp" : ""}</span></span>
+    <span class="d" style="${diffBg(g.differenz)}">${g.differenz > 0 ? "+" : ""}${num(g.differenz, 1)}</span></div>`;
+}
+async function loadReview(sp) {
+  let r;
+  try { r = await api("/api/review" + (sp ? `?spieltag=${sp}` : "")); } catch (e) { return notice(e.message, "err"); }
+  if (!r.spieltag) {
+    $("rvTitle").textContent = ""; ["rvDays", "rvTiles", "rvGames", "rvWin", "rvLose", "rvKonk", "rvKinds", "rvSeason", "rvSWin", "rvSLose"].forEach((id) => $(id).innerHTML = "");
+    $("rvTiles").innerHTML = `<div class="notice">Noch keine abgeschlossenen Spieltage in der Tipp-Historie. Im Reiter „Mitspieler“ „Historie neu laden“ drücken.</div>`;
+    return;
+  }
+  rvSel = r.spieltag;
+  const k = r.kopf;
+  $("rvDays").innerHTML = `<span class="sub">Spieltag:</span>` + r.spieltage.map((s) => `<button data-st="${s}" class="${s === r.spieltag ? "on" : ""}">${s}</button>`).join("");
+  document.querySelectorAll("#rvDays button").forEach((b) => b.onclick = () => loadReview(+b.dataset.st));
+  $("rvTitle").textContent = `Spieltag ${r.spieltag}`;
+  const a = k.arten;
+  $("rvTiles").innerHTML = `
+    <div class="tile"><div class="v">${num(k.punkte)}</div><div class="l">deine Punkte · Ø Runde ${num(k.schnitt, 1)} (${signed(k.punkte - k.schnitt)})</div></div>
+    <div class="tile"><div class="v">${num(k.bester)}</div><div class="l">bester Mitspieler: ${esc(k.bester_name || "–")}</div></div>
+    <div class="tile"><div class="v">${k.platz_spieltag ?? "–"}.</div><div class="l">dein Platz am Spieltag (von ${k.teilnehmer})</div></div>
+    <div class="tile"><div class="v">${arrowRank(k.platz_vorher, k.platz_nachher)}</div><div class="l">Platz in der Tabelle vorher → nachher</div></div>
+    <div class="tile"><div class="v">${num(k.abstand_spitze_vorher)} → ${num(k.abstand_spitze_nachher)}</div><div class="l">Abstand zur Spitze (Punkte)</div></div>
+    <div class="tile"><div class="v">${num(k.tore_daneben, 1)}</div><div class="l">Tore daneben je Tipp · Runde ${num(k.tore_daneben_runde, 1)}</div></div>
+    <div class="tile"><div class="v">${a.exakt} / ${a.Tordifferenz} / ${a.Tendenz} / ${a.falsch}</div><div class="l">exakt / Tordifferenz / nur Tendenz / falsch${a["kein Tipp"] ? ` · ${a["kein Tipp"]} ohne Tipp` : ""}</div></div>
+    <div class="tile"><div class="v">${k.gegentipps_richtig} von ${k.gegentipps}</div><div class="l">Gegentipps mit richtiger Tendenz</div></div>`;
+  $("rvGames").innerHTML = `<thead><tr><th>Spiel</th><th>Ergebnis</th><th>dein Tipp</th><th>Treffer</th><th>Tore daneben<br><span class="sub">du / Ø Runde</span></th><th>Rundenquote</th><th>Runde mit<br>deiner Tendenz</th><th>Runde mit<br>richtiger Tendenz</th><th>exakt<br>getippt</th><th>Punkte</th><th>Ø Runde</th><th>gegenüber Ø</th></tr></thead><tbody>${r.spiele.map((g) =>
+    `<tr><td>${esc(g.home)} – ${esc(g.away)}</td><td><b>${g.ergebnis.join(":")}</b></td><td>${g.tipp ? g.tipp.join(":") : "–"}</td>
+      <td><span class="art ${g.art.replace(" ", "")}">${g.art}</span></td><td>${num(g.tore_daneben)} / ${num(g.tore_daneben_runde, 1)}</td>
+      <td>${g.quote ? g.quote.join("-") : "–"}</td><td>${g.anteil_gleich == null ? "–" : pct(g.anteil_gleich)}${g.gegentipp ? ' <span class="chip">Gegentipp</span>' : ""}</td>
+      <td>${g.anteil_richtig == null ? "–" : pct(g.anteil_richtig)}</td><td>${g.exakt_runde} von ${g.tipps}</td>
+      <td>${num(g.punkte)}</td><td>${num(g.schnitt, 1)}</td><td style="${diffBg(g.differenz)}"><b>${g.differenz > 0 ? "+" : ""}${num(g.differenz, 1)}</b></td></tr>`).join("")}
+    <tr><td colspan="9"><b>Summe</b></td><td><b>${num(k.punkte)}</b></td><td><b>${num(k.schnitt, 1)}</b></td><td style="${diffBg(k.punkte - k.schnitt)}"><b>${k.punkte - k.schnitt > 0 ? "+" : ""}${num(k.punkte - k.schnitt, 1)}</b></td></tr></tbody>`;
+  $("rvWin").innerHTML = r.gewinner.map((g) => rvItem(g)).join("") || `<p class="sub">Kein Spiel über dem Schnitt.</p>`;
+  $("rvLose").innerHTML = r.verlierer.map((g) => rvItem(g)).join("") || `<p class="sub">Kein Spiel unter dem Schnitt.</p>`;
+  $("rvKonkInfo").textContent = `Mitspieler bis ${2} Plätze vor und hinter dir vor dem Spieltag, dazu die Spitze. Abstand = deine Punkte minus seine; positiv heißt, du liegst vorn.`;
+  $("rvKonk").innerHTML = r.konkurrenz.length ? `<thead><tr><th>Mitspieler</th><th>Platz<br>vorher → nachher</th><th>Punkte<br>am Spieltag</th><th>Abstand<br>vorher</th><th>Abstand<br>nachher</th><th>abgesetzt (+) /<br>verloren (−)</th><th>entscheidende Spiele <span class="sub">(du minus er; sein Tipp)</span></th></tr></thead><tbody>${r.konkurrenz.map((c) => {
+    const ch = c.abstand_nachher - c.abstand_vorher;
+    return `<tr><td>${esc(c.name)}${c.spitze ? ' <span class="chip">Spitze</span>' : ""}</td><td>${c.platz_vorher} → ${c.platz_nachher}</td><td>${num(c.punkte)}</td>
+      <td>${signed(c.abstand_vorher)}</td><td>${signed(c.abstand_nachher)}</td><td style="${diffBg(ch)}"><b>${ch > 0 ? "+" : ""}${num(ch)}</b></td>
+      <td class="wrap" style="max-width: 460px">${c.entscheidend.map((e) => `${esc(e.spiel)} <b class="${e.differenz > 0 ? "pos" : "neg"}">${e.differenz > 0 ? "+" : ""}${num(e.differenz)}</b> <span class="sub">(${e.tipp ? e.tipp.join(":") : "kein Tipp"})</span>`).join(" · ") || '<span class="sub">gleich gepunktet</span>'}</td></tr>`;
+  }).join("")}</tbody>` : `<tr><td class="sub">–</td></tr>`;
+  // Saison
+  const s = r.saison, kinds = s.nach_art;
+  $("rvKinds").innerHTML = `
+    <div class="tile"><div class="v">${num(s.punkte)}</div><div class="l">deine Punkte · Ø Runde ${num(s.schnitt, 1)} (${signed(s.punkte - s.schnitt)})</div></div>` +
+    Object.entries(kinds).map(([name, x]) => `<div class="tile"><div class="v">${x.spiele ? pct(x.tendenz_richtig / x.spiele) : "–"}</div>
+      <div class="l">${name}s: Tendenz richtig (${x.tendenz_richtig} von ${x.spiele}) · ${num(x.punkte)} Pkt., gegenüber Ø ${signed(Math.round(x.differenz))}</div></div>`).join("");
+  $("rvSeason").innerHTML = `<thead><tr><th>Spieltag</th><th>Punkte</th><th>Ø Runde</th><th>gegenüber Ø</th><th>Bester</th><th>Platz am<br>Spieltag</th><th>Platz<br>Tabelle</th><th>Abstand<br>zur Spitze</th><th>Tore daneben<br><span class="sub">du / Runde</span></th><th>Gegen-<br>tipps</th></tr></thead><tbody>${s.verlauf.map((v) => {
+    const d = v.punkte - v.schnitt;
+    return `<tr class="clickrow${v.spieltag === r.spieltag ? " sel" : ""}" data-st="${v.spieltag}"><td>${v.spieltag}</td><td>${num(v.punkte)}</td><td>${num(v.schnitt, 1)}</td>
+      <td style="${diffBg(d)}"><b>${d > 0 ? "+" : ""}${num(d, 1)}</b></td><td>${num(v.bester)}</td><td>${v.platz_spieltag ?? "–"}</td><td>${v.platz_nachher ?? "–"}</td>
+      <td>${num(v.abstand_spitze_nachher)}</td><td>${num(v.tore_daneben, 1)} / ${num(v.tore_daneben_runde, 1)}</td><td>${v.gegentipps}</td></tr>`;
+  }).join("")}</tbody>`;
+  document.querySelectorAll("#rvSeason tr.clickrow").forEach((tr) => tr.onclick = () => loadReview(+tr.dataset.st));
+  $("rvSWin").innerHTML = s.gewinner.map((g) => rvItem(g, true)).join("") || `<p class="sub">–</p>`;
+  $("rvSLose").innerHTML = s.verlierer.map((g) => rvItem(g, true)).join("") || `<p class="sub">–</p>`;
 }
 
 // ---- Quoten -------------------------------------------------------------------------------

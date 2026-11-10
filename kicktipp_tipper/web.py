@@ -173,6 +173,12 @@ def create_app(engine: Engine, background: bool = True) -> FastAPI:
 
         return rb(engine.store.history(), engine.store.recommendations(), engine.me_id, engine.cfg.rules)
 
+    @app.get("/api/review", dependencies=[Depends(auth)])
+    def review(spieltag: int | None = None):
+        from .review import review as rv
+
+        return rv(engine.store.history(), engine.me_id, spieltag)
+
     @app.post("/api/quoten", dependencies=[Depends(auth)])
     def quoten(req: OddsRequest):
         from . import quoten as q

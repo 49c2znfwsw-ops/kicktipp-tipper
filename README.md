@@ -99,6 +99,15 @@ Je Spieltag drei Zahlen nebeneinander:
 
 Für die Empfehlung wird die Rundenquote mit allen Tipps exakt nachgerechnet: dein Tipp heraus, die Empfehlung hinein. An Spieltag 6 ergibt diese Rechnung für alle 201 Tipps genau die Punkte von Kicktipp. Mit einem Klick auf einen Spieltag siehst du jedes Spiel im Detail.
 
+### Reiter „Review“
+
+Review jedes abgeschlossenen Spieltags aus der Kicktipp-Tippübersicht, wählbar über die Spieltag-Knöpfe:
+- **Kopfzahlen:** deine Punkte gegen den Schnitt und den Besten der Runde, Platz am Spieltag, Tabellenplatz und Abstand zur Spitze vorher und nachher, Tore daneben je Tipp (du gegen Runde), Trefferarten (exakt / Tordifferenz / Tendenz / falsch) und wie viele Gegentipps aufgingen
+- **Spiele:** Ergebnis, dein Tipp, Trefferart, Tore daneben, Rundenquote, wie viele die Runde so getippt hat wie du (Gegentipp, wenn höchstens ein Drittel), wie viele richtig lagen, deine Punkte gegen den Schnitt, grün oder rot hinterlegt
+- **Größte Gewinner und Verlierer:** die drei Spiele mit dem größten Plus und Minus gegenüber dem Schnitt
+- **Direkte Konkurrenz:** die Mitspieler bis zwei Plätze vor und hinter dir sowie die Spitze, mit Abstand vorher und nachher, wie viel du dich abgesetzt oder verloren hast, und in welchen Spielen das passiert ist
+- **Saison:** Verlauf je Spieltag, Mehrheitstipps gegen Gegentipps (Trefferquote, Punkte, Plus gegenüber dem Schnitt) und die fünf besten und schlechtesten Spiele der Saison
+
 ### Reiter „Quoten“
 
 Wettquoten vieler Buchmacher über [The Odds API](https://the-odds-api.com) neben der eigenen Prognose. Der Reiter zeigt:
